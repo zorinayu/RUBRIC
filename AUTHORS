@@ -1,0 +1,18 @@
+# Authors
+
+## Principal Investigator
+**Yanxuan Yu**  
+Columbia University  
+Email: yy3523@columbia.edu  
+GitHub: [@zorinayu](https://github.com/zorinayu)
+
+## Project Description
+This project implements SMOTE-Adv (Adversarially-Filtered SMOTE), a production-ready framework for imbalanced binary classification with adversarial filtering techniques, supporting both fraud detection and network intrusion detection scenarios.
+
+## Academic Affiliation
+Department of Computer Science  
+Columbia University  
+New York, NY, USA
+
+## License
+This project is licensed under the MIT License - see the LICENSE file for details.

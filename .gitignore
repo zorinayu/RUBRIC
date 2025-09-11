@@ -1,0 +1,74 @@
+# Data and outputs (do not version large datasets or generated artifacts)
+data/**
+outputs/**
+
+# Checkpoints and caches
+.ipynb_checkpoints/**
+__pycache__/**
+*.pyc
+
+# OS/Editor
+.DS_Store
+.vscode/**
+.idea/**
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv312/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Data files (optional - uncomment if you don't want to track data)
+# data/
+# *.csv
+# *.arff
+# *.txt
+
+# Output files
+outputs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large files that should use Git LFS
+*.dll
+*.so
+*.dylib
