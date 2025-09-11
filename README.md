@@ -165,14 +165,15 @@ SMOTE-ADV enhances oversampling by adding an adversarial filtering step:
 
 ### Results (Credit Card Fraud, seed=42, RFF=300, median-gamma)
 
-| Base Generator | With ADV | ROC-AUC | PR-AUC | F1-Macro | F1-Weighted |
-|----------------|----------|---------|--------|----------|-------------|
-| None | - | 0.9679 | 0.5282 | 0.5569 | 0.9880 |
-| SMOTE | SMOTE + ADV | 0.9395 | 0.4835 | 0.5469 | 0.9873 |
-| Borderline-SMOTE | Borderline + ADV | 0.9487 | 0.5599 | 0.6762 | 0.9966 |
-| SVM-SMOTE | SVM + ADV | 0.9511 | 0.6524 | 0.6657 | 0.9962 |
-| (Baselines) | SMOTE | 0.9581 | 0.5110 | 0.5495 | 0.9865 |
-|  | ADASYN | 0.9116 | 0.3863 | 0.5216 | 0.9783 |
+Paired comparison (without ADV vs with ADV):
+
+| Generator | ROC-AUC (no ADV) | PR-AUC (no ADV) | F1-Macro (no ADV) | F1-Weighted (no ADV) | ROC-AUC (+ADV) | PR-AUC (+ADV) | F1-Macro (+ADV) | F1-Weighted (+ADV) |
+|-----------|-------------------|------------------|-------------------|----------------------|----------------|---------------|------------------|---------------------|
+| None | 0.9679 | 0.5282 | 0.5569 | 0.9880 | - | - | - | - |
+| SMOTE | 0.9581 | 0.5110 | 0.5495 | 0.9865 | 0.9395 | 0.4835 | 0.5469 | 0.9873 |
+| Borderline-SMOTE | 0.9436 | 0.5480 | 0.6678 | 0.9964 | 0.9487 | 0.5599 | 0.6762 | 0.9966 |
+| SVM-SMOTE | 0.9614 | 0.6608 | 0.6662 | 0.9960 | 0.9511 | 0.6524 | 0.6657 | 0.9962 |
+| ADASYN | 0.9116 | 0.3863 | 0.5216 | 0.9783 | - | - | - | - |
 
 Runtime (seconds):
 
