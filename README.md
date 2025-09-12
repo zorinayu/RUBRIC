@@ -66,8 +66,8 @@ NSL-KDD usage is analogous (optional).
 
 **Key parameters:**
 * `--dataset`: `creditcard` or `nsl_kdd`
-* `--augment`: `none`, `smote`, `smote-adv`, `adasyn`, `borderline-smote`, `svm-smote`
-* `--gen-kind` (when `smote-adv`): `smote`, `borderline`, `svm`
+* `--augment`: `none`, `smote`, `smote-adv`, `adasyn`, `borderline-smote`, `svm-smote`, `smote-tomek`, `smote-enn`
+* `--gen-kind` (when `smote-adv`): `smote`, `borderline`, `borderline2`, `svm`, `kmeans`, `smote-tomek`, `smote-enn`, `adasyn`
 * `--keep-frac` alias of `--keep-top-frac`
 * `--rbf-components`: number of random Fourier features (default: 300)
 * `--rbf-gamma`: RBF bandwidth parameter (default: 0.5)
@@ -162,6 +162,28 @@ SMOTE-ADV enhances oversampling by adding an adversarial filtering step:
 ### Key Idea
 
 **Adversarial Filtering**: Keep the hardest-to-distinguish, high-density, majority-distant synthetic samples.
+
+### Generator-agnostic usage
+
+Apply ADV on top of different generators with a unified CLI:
+
+```bash
+# Pattern
+python src/train.py --dataset <creditcard|nsl_kdd> --augment smote-adv \
+  --gen-kind <smote|borderline|borderline2|svm|kmeans|smote-tomek|smote-enn|adasyn> \
+  --target-ratio 0.3 --keep-frac 0.65 --adv-C 1.0 --rbf-gamma -1.0 --seed 42
+
+# Examples
+python src/train.py --dataset creditcard --augment smote-adv --gen-kind smote --target-ratio 0.3 --keep-frac 0.65 --adv-C 1.0 --rbf-gamma -1.0 --seed 42
+python src/train.py --dataset creditcard --augment smote-adv --gen-kind borderline --target-ratio 0.3 --keep-frac 0.65 --adv-C 1.0 --rbf-gamma -1.0 --seed 42
+python src/train.py --dataset creditcard --augment smote-adv --gen-kind svm --target-ratio 0.3 --keep-frac 0.65 --adv-C 1.0 --rbf-gamma -1.0 --seed 42
+python src/train.py --dataset creditcard --augment smote-adv --gen-kind smote-tomek --target-ratio 0.3 --keep-frac 0.65 --adv-C 1.0 --rbf-gamma -1.0 --seed 42
+python src/train.py --dataset creditcard --augment smote-adv --gen-kind smote-enn --target-ratio 0.3 --keep-frac 0.65 --adv-C 1.0 --rbf-gamma -1.0 --seed 42
+```
+
+Notes:
+- The ADV filter is the same across generators; only `--gen-kind` switches the underlying oversampler.
+- To avoid invalid ratios on balanced datasets, the training script auto-adjusts an effective target ratio slightly above the current minority/majority ratio.
 
 ### Results (Credit Card Fraud, seed=42, RFF=300, median-gamma)
 
