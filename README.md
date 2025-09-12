@@ -189,6 +189,8 @@ Runtime (seconds):
 | SMOTE + ADV | 13.09 | 19.99 | 0.19 |
 | Borderline + ADV | 10.85 | 14.00 | 0.19 |
 | SVM + ADV | 414.12 | 13.20 | 0.23 |
+| SMOTE-Tomek + ADV | 109.42 | 16.35 | 0.18 |
+| SMOTE-ENN + ADV | 144.97 | 16.00 | 0.18 |
 
 ---
 
