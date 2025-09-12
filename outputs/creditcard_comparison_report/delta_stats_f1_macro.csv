@@ -1,0 +1,2 @@
+generator,metric,mean_delta,ci_lo,ci_hi,p_value,n_pairs
+smote,f1_macro,-0.002579952896518023,-0.002579952896518023,-0.002579952896518023,1.0,1
