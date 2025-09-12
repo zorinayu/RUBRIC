@@ -21,6 +21,8 @@ from augment import (
     svm_smote_oversample,
     kmeans_smote_oversample,
     generate_then_filter,
+    smote_tomek_resample,
+    smote_enn_resample,
 )
 from models.svm_rff import SVMWithRFF
 from evaluate import evaluate_and_plot
@@ -33,7 +35,7 @@ def parse_args():
     p.add_argument('--dataset', type=str, default='creditcard', choices=['creditcard', 'nsl_kdd'], help='Dataset type to use')
     p.add_argument('--test-size', type=float, default=0.2)
     p.add_argument('--seed', type=int, default=42)
-    p.add_argument('--augment', type=str, default='smote-adv', choices=['none','smote','smote-adv','adasyn','borderline-smote','svm-smote','kmeans-smote'])
+    p.add_argument('--augment', type=str, default='smote-adv', choices=['none','smote','smote-adv','adasyn','borderline-smote','svm-smote','kmeans-smote','smote-tomek','smote-enn'])
     p.add_argument('--target-ratio', type=float, default=0.3, help='Minority:Majority balancing target (e.g., 0.3 -> 3:10)')
     p.add_argument('--rbf-components', type=int, default=300)
     p.add_argument('--rbf-gamma', type=float, default=-1.0, help='RBF bandwidth; if <0 uses median heuristic')
@@ -51,7 +53,8 @@ def parse_args():
     p.add_argument('--w-majority', type=float, default=0.1)
     p.add_argument('--gate-frac', type=float, default=0.9)
     p.add_argument('--grid', action='store_true', help='Enable small grid over C, keep, w_density')
-    p.add_argument('--gen-kind', type=str, default='smote', choices=['smote','borderline','svm'], help='Underlying generator for SMOTE-ADV filter')
+    p.add_argument('--gen-kind', type=str, default='smote', choices=['smote','borderline','borderline2','svm','kmeans','smote-tomek','smote-enn','adasyn'], help='Underlying generator for SMOTE-ADV filter')
+    p.add_argument('--adapt-keep', action='store_true', help='Enable one-shot adaptive keep_top_frac fallback using recall@FPR=1% on a validation split')
     return p.parse_args()
 
 
@@ -149,22 +152,54 @@ def main():
     # Augmentation timings
     aug_times = {}
 
+    # Compute current minority:majority ratio and adjust target if needed to avoid minority downsampling
+    n_min = int(np.sum(y_tr == 1))
+    n_maj = int(np.sum(y_tr == 0))
+    current_ratio = (n_min / n_maj) if n_maj > 0 else 0.0
+    effective_ratio = args.target_ratio
+    if args.augment != 'none' and effective_ratio <= current_ratio:
+        # Bump slightly above current ratio; cap to reasonable upper bound
+        bump = 0.05
+        effective_ratio = max(current_ratio + bump, current_ratio + 1e-6)
+        print(f"   Adjusted target ratio from {args.target_ratio} to {effective_ratio:.3f} (current minority/majority={current_ratio:.3f})")
+
     # Augmentation
     if args.augment == 'none':
         print("Skipping data augmentation")
     elif args.augment == 'smote':
         print("Applying SMOTE oversampling...")
         t0 = time.time()
-        X_tr, y_tr = smote_oversample(X_tr, y_tr, random_state=args.seed, ratio=args.target_ratio)
+        X_tr, y_tr = smote_oversample(X_tr, y_tr, random_state=args.seed, ratio=effective_ratio)
         aug_times['augment_total_s'] = float(time.time() - t0)
         print(f"   After SMOTE: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
     elif args.augment == 'smote-adv':
+        # Keep copy before augmentation for inner validation
+        orig_X_tr, orig_y_tr = X_tr.copy(), y_tr.copy()
+        # Gen-aware defaults for weights/keep if user didn't override
+        if (
+            abs(args.w_realism - 0.6) < 1e-9 and abs(args.w_density - 0.3) < 1e-9 and abs(args.w_majority - 0.1) < 1e-9
+            and abs(args.keep_top_frac - 0.65) < 1e-9 and not args.grid
+        ):
+            kind = (args.gen_kind or 'smote').lower()
+            if kind in ('svm', 'svm-smote'):
+                args.w_realism, args.w_density, args.w_majority = 0.6, 0.25, 0.15
+                args.keep_top_frac = 0.55
+                print("Gen-aware defaults applied for SVM-SMOTE: weights=(0.6,0.25,0.15), keep_top_frac=0.55")
+            elif kind in ('borderline', 'borderline-smote', 'borderline2', 'borderline-2'):
+                args.w_realism, args.w_density, args.w_majority = 0.5, 0.3, 0.2
+                # keep within 0.6-0.7; choose mid
+                args.keep_top_frac = 0.65
+                print("Gen-aware defaults applied for Borderline-SMOTE: weights=(0.5,0.3,0.2), keep_top_frac=0.65")
+            elif kind in ('smote', 'adasyn'):
+                args.w_realism, args.w_density, args.w_majority = 0.55, 0.3, 0.15
+                print("Gen-aware defaults applied for SMOTE/ADASYN: weights=(0.55,0.3,0.15)")
+
         print(f"Applying {args.gen_kind.upper()} + Adversarial Filtering (SMOTE-ADV)...")
         t0 = time.time()
         X_tr, y_tr = generate_then_filter(
             X_tr, y_tr,
             generator=args.gen_kind,
-            ratio=args.target_ratio,
+            ratio=effective_ratio,
             random_state=args.seed,
             keep_top_frac=args.keep_top_frac,
             max_iter=500,
@@ -177,30 +212,112 @@ def main():
         )
         aug_times['augment_total_s'] = float(time.time() - t0)
         print(f"   After {args.gen_kind}+Adv: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
+
+        # Optional: one-shot adaptive keep fallback based on Recall@FPR=1%
+        if args.adapt_keep:
+            print("   Adaptive keep check on validation split (Recall@FPR=1%)...")
+            from augment import make_oversampler
+            from sklearn.model_selection import train_test_split as _tts
+
+            X_tr_in, X_val_in, y_tr_in, y_val_in = _tts(orig_X_tr, orig_y_tr, test_size=0.25, stratify=orig_y_tr, random_state=args.seed)
+            # Base augmentation on inner train
+            osr = make_oversampler(args.gen_kind, effective_ratio, args.seed, k_neighbors=5)
+            Xb, yb = osr.fit_resample(X_tr_in, y_tr_in)
+            # Adv augmentation on inner train
+            Xa, ya = generate_then_filter(
+                X_tr_in, y_tr_in,
+                generator=args.gen_kind,
+                ratio=effective_ratio,
+                random_state=args.seed,
+                keep_top_frac=args.keep_top_frac,
+                max_iter=500,
+                C=args.adv_C,
+                k_density=args.k_density,
+                k_majority=args.k_majority,
+                weights=(args.w_realism, args.w_density, args.w_majority),
+                gate_frac=args.gate_frac,
+                return_times=None,
+            )
+
+            # Train quick models and compare recall@1%
+            model_b = SVMWithRFF(n_components=min(200, args.rbf_components), gamma=gamma, C=args.svm_C, random_state=args.seed)
+            model_b.fit(Xb, yb)
+            sb = model_b.decision_function(X_val_in)
+            model_a = SVMWithRFF(n_components=min(200, args.rbf_components), gamma=gamma, C=args.svm_C, random_state=args.seed)
+            model_a.fit(Xa, ya)
+            sa = model_a.decision_function(X_val_in)
+
+            # Compute recall@FPR=1%
+            from sklearn.metrics import roc_curve
+            def _recall_at_fpr(y_true, scores, target_fpr: float=0.01):
+                fpr, tpr, _ = roc_curve(y_true, scores)
+                mask = fpr <= target_fpr
+                return float(np.max(tpr[mask])) if np.any(mask) else 0.0
+
+            rb = _recall_at_fpr(y_val_in, sb, 0.01)
+            ra = _recall_at_fpr(y_val_in, sa, 0.01)
+            print(f"      base Recall@1%={rb:.4f}, +ADV Recall@1%={ra:.4f}")
+            if ra + 1e-6 < rb:
+                # Reduce keep_top_frac once and regenerate on full train
+                old_keep = args.keep_top_frac
+                # pick lower bound by generator
+                kind = (args.gen_kind or 'smote').lower()
+                lower = 0.5 if kind in ('svm','svm-smote') else 0.6
+                args.keep_top_frac = max(lower, args.keep_top_frac - 0.05)
+                print(f"      Degradation detected. Reducing keep_top_frac from {old_keep} to {args.keep_top_frac} and regenerating...")
+                t0 = time.time()
+                X_tr, y_tr = generate_then_filter(
+                    orig_X_tr, orig_y_tr,
+                    generator=args.gen_kind,
+                    ratio=effective_ratio,
+                    random_state=args.seed,
+                    keep_top_frac=args.keep_top_frac,
+                    max_iter=500,
+                    C=args.adv_C,
+                    k_density=args.k_density,
+                    k_majority=args.k_majority,
+                    weights=(args.w_realism, args.w_density, args.w_majority),
+                    gate_frac=args.gate_frac,
+                    return_times=aug_times,
+                )
+                aug_times['augment_total_s'] = float(time.time() - t0)
+                print(f"      Regenerated: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
     elif args.augment == 'adasyn':
         print("Applying ADASYN oversampling...")
         t0 = time.time()
-        X_tr, y_tr = adasyn_oversample(X_tr, y_tr, random_state=args.seed, ratio=args.target_ratio)
+        X_tr, y_tr = adasyn_oversample(X_tr, y_tr, random_state=args.seed, ratio=effective_ratio)
         aug_times['augment_total_s'] = float(time.time() - t0)
         print(f"   After ADASYN: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
     elif args.augment == 'borderline-smote':
         print("Applying Borderline-SMOTE (borderline-1) oversampling...")
         t0 = time.time()
-        X_tr, y_tr = borderline_smote_oversample(X_tr, y_tr, random_state=args.seed, ratio=args.target_ratio, kind="borderline-1")
+        X_tr, y_tr = borderline_smote_oversample(X_tr, y_tr, random_state=args.seed, ratio=effective_ratio, kind="borderline-1")
         aug_times['augment_total_s'] = float(time.time() - t0)
         print(f"   After Borderline-SMOTE: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
     elif args.augment == 'svm-smote':
         print("Applying SVM-SMOTE oversampling...")
         t0 = time.time()
-        X_tr, y_tr = svm_smote_oversample(X_tr, y_tr, random_state=args.seed, ratio=args.target_ratio)
+        X_tr, y_tr = svm_smote_oversample(X_tr, y_tr, random_state=args.seed, ratio=effective_ratio)
         aug_times['augment_total_s'] = float(time.time() - t0)
         print(f"   After SVM-SMOTE: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
     elif args.augment == 'kmeans-smote':
         print("Applying KMeans-SMOTE oversampling...")
         t0 = time.time()
-        X_tr, y_tr = kmeans_smote_oversample(X_tr, y_tr, random_state=args.seed, ratio=args.target_ratio)
+        X_tr, y_tr = kmeans_smote_oversample(X_tr, y_tr, random_state=args.seed, ratio=effective_ratio)
         aug_times['augment_total_s'] = float(time.time() - t0)
         print(f"   After KMeans-SMOTE: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
+    elif args.augment == 'smote-tomek':
+        print("Applying SMOTE-Tomek resampling...")
+        t0 = time.time()
+        X_tr, y_tr = smote_tomek_resample(X_tr, y_tr, random_state=args.seed, ratio=effective_ratio)
+        aug_times['augment_total_s'] = float(time.time() - t0)
+        print(f"   After SMOTE-Tomek: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
+    elif args.augment == 'smote-enn':
+        print("Applying SMOTE-ENN resampling...")
+        t0 = time.time()
+        X_tr, y_tr = smote_enn_resample(X_tr, y_tr, random_state=args.seed, ratio=effective_ratio)
+        aug_times['augment_total_s'] = float(time.time() - t0)
+        print(f"   After SMOTE-ENN: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
 
     # Optional small grid over C, keep, w_density
     best = None
@@ -284,6 +401,7 @@ def main():
         'svm_C': args.svm_C,
         'test_size': args.test_size,
         'target_ratio': args.target_ratio,
+        'effective_target_ratio': effective_ratio,
         'seed': args.seed,
         'training_samples': len(X_tr),
         'test_samples': len(X_te),

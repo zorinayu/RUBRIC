@@ -185,67 +185,49 @@ Notes:
 - The ADV filter is the same across generators; only `--gen-kind` switches the underlying oversampler.
 - To avoid invalid ratios on balanced datasets, the training script auto-adjusts an effective target ratio slightly above the current minority/majority ratio.
 
-### Results (Credit Card Fraud, seed=42, RFF=300, median-gamma)
+### Results (Credit Card Fraud, multi-seed, RFF=300, median-gamma)
 
-Paired comparison (without ADV vs with ADV):
+Paired deltas (+ADV − base), mean ± 95% CI (bootstrap), with permutation-test p-values, aggregated across seeds.
 
-| Generator | ROC-AUC (no ADV) | PR-AUC (no ADV) | F1-Macro (no ADV) | F1-Weighted (no ADV) | ROC-AUC (+ADV) | PR-AUC (+ADV) | F1-Macro (+ADV) | F1-Weighted (+ADV) |
-|-----------|-------------------|------------------|-------------------|----------------------|----------------|---------------|------------------|---------------------|
-| None | 0.9679 | 0.5269 | 0.5567 | 0.9880 | 0.9511 | 0.6524 | 0.6657 | 0.9962 |
-| SMOTE | 0.9581 | 0.5110 | 0.5495 | 0.9865 | 0.9395 | 0.4835 | 0.5469 | 0.9873 |
-| Borderline-SMOTE | 0.9436 | 0.5480 | 0.6678 | 0.9964 | 0.9487 | 0.5599 | 0.6762 | 0.9966 |
-| SVM-SMOTE | 0.9614 | 0.6608 | 0.6662 | 0.9960 | 0.9511 | 0.6524 | 0.6657 | 0.9962 |
-| ADASYN | 0.9116 | 0.3863 | 0.5216 | 0.9783 | 0.8816 | 0.4339 | 0.5535 | 0.9893 |
-| SMOTE-Tomek | 0.9554 | 0.5060 | 0.5498 | 0.9865 | 0.8589 | 0.4185 | 0.5474 | 0.9893 |
-| SMOTE-ENN | 0.9555 | 0.5193 | 0.5502 | 0.9864 | 0.8816 | 0.4339 | 0.5535 | 0.9893 |
+| Generator | ΔPR-AUC | ΔRecall@FPR=1% | ΔLift@5% | ΔF1-Macro |
+|-----------|---------|-----------------|----------|-----------|
+| SMOTE | see `outputs/creditcard_comparison_report/delta_stats_pr_auc.csv` | see CSV | see CSV | see CSV |
+| Borderline-SMOTE | see CSV | see CSV | see CSV | see CSV |
+| SVM-SMOTE | see CSV | see CSV | see CSV | see CSV |
+| SMOTE-Tomek | see CSV | see CSV | see CSV | see CSV |
+| SMOTE-ENN | see CSV | see CSV | see CSV | see CSV |
+| ADASYN | see CSV | see CSV | see CSV | see CSV |
 
-Runtime (seconds):
+Figures:
+- Paired deltas per metric: `outputs/creditcard_comparison_report/paired_deltas.png`
+- Win-rate of +ADV over base (PR-AUC): `outputs/creditcard_comparison_report/win_rate.png`
+- Overview plots: `outputs/creditcard_comparison_report/creditcard_comparison_plots.png`
+
+Runtime (seconds, averaged over seeds):
 
 | Method | Augment | Train | Inference |
 |--------|---------|-------|-----------|
-| None | - | 193.66 | 0.19 |
-| SMOTE | 5.26 | 32.90 | 0.45 |
-| ADASYN | 3.81 | 31.46 | 0.48 |
-| Borderline-SMOTE | 4.29 | 13.48 | 0.18 |
-| SVM-SMOTE | 460.76 | 13.36 | 0.21 |
-| SMOTE + ADV | 13.09 | 19.99 | 0.19 |
-| Borderline + ADV | 10.85 | 14.00 | 0.19 |
-| SVM + ADV | 414.12 | 13.20 | 0.23 |
-| SMOTE-Tomek + ADV | 109.42 | 16.35 | 0.18 |
-| SMOTE-ENN + ADV | 144.97 | 16.00 | 0.18 |
+| see `outputs/creditcard_comparison_report/summary.csv` for per-run and averages |
 
 ---
 
-### Results (NSL-KDD, seed=42, RFF=300, median-gamma)
+### Results (NSL-KDD, multi-seed, RFF=300, median-gamma)
 
-Paired comparison (without ADV vs with ADV):
+Paired deltas (+ADV − base), mean ± 95% CI (bootstrap), with permutation-test p-values, aggregated across seeds.
 
-| Generator | ROC-AUC (no ADV) | PR-AUC (no ADV) | F1-Macro (no ADV) | F1-Weighted (no ADV) | ROC-AUC (+ADV) | PR-AUC (+ADV) | F1-Macro (+ADV) | F1-Weighted (+ADV) |
-|-----------|-------------------|------------------|-------------------|----------------------|----------------|---------------|------------------|---------------------|
-| None | 0.99636 | 0.99653 | 0.97724 | 0.97727 | – | – | – | – |
-| SMOTE | 0.99636 | 0.99657 | 0.97721 | 0.97724 | 0.99637 | 0.99656 | 0.97731 | 0.97734 |
-| Borderline-SMOTE | 0.99662 | 0.99639 | 0.97388 | 0.97391 | 0.99661 | 0.99660 | 0.97479 | 0.97482 |
-| SVM-SMOTE | 0.99672 | 0.99604 | 0.97621 | 0.97624 | 0.99659 | 0.99617 | 0.97526 | 0.97529 |
-| ADASYN | 0.99675 | 0.99660 | 0.97378 | 0.97381 | – | – | – | – |
-| SMOTE-Tomek | 0.99632 | 0.99654 | 0.97754 | 0.97758 | 0.99638 | 0.99656 | 0.97717 | 0.97721 |
-| SMOTE-ENN | 0.99544 | 0.99583 | 0.97917 | 0.97919 | 0.99637 | 0.99655 | 0.97711 | 0.97714 |
+| Generator | ΔPR-AUC | ΔRecall@FPR=1% | ΔLift@5% | ΔF1-Macro |
+|-----------|---------|-----------------|----------|-----------|
+| SMOTE | see `outputs/nsl_kdd_comparison_report/delta_stats_pr_auc.csv` | see CSV | see CSV | see CSV |
+| Borderline-SMOTE | see CSV | see CSV | see CSV | see CSV |
+| SVM-SMOTE | see CSV | see CSV | see CSV | see CSV |
+| SMOTE-Tomek | see CSV | see CSV | see CSV | see CSV |
+| SMOTE-ENN | see CSV | see CSV | see CSV | see CSV |
+| ADASYN | see CSV | see CSV | see CSV | see CSV |
 
-Runtime (seconds):
-
-| Method | Augment | Train | Inference |
-|--------|---------|-------|-----------|
-| None | – | 8.73 | 0.20 |
-| SMOTE | 7.28 | 5.78 | 0.09 |
-| ADASYN | 8.31 | 5.77 | 0.11 |
-| Borderline-SMOTE | 19.60 | 8.46 | 0.09 |
-| SVM-SMOTE | 200.58 | 9.06 | 0.16 |
-| SMOTE + ADV | 5.68 | 5.54 | 0.12 |
-| Borderline + ADV | 7.31 | 5.50 | 0.09 |
-| SVM + ADV | 308.89 | 12.42 | 0.26 |
-| SMOTE-Tomek | 13.40 | 5.86 | 0.11 |
-| SMOTE-Tomek + ADV | 21.95 | 12.03 | 0.14 |
-| SMOTE-ENN | 13.36 | 5.70 | 0.10 |
-| SMOTE-ENN + ADV | 38.08 | 10.03 | 0.29 |
+Figures:
+- Paired deltas per metric: `outputs/nsl_kdd_comparison_report/paired_deltas.png`
+- Win-rate of +ADV over base (PR-AUC): `outputs/nsl_kdd_comparison_report/win_rate.png`
+- Overview plots: `outputs/nsl_kdd_comparison_report/nsl_kdd_comparison_plots.png`
 
 ---
 

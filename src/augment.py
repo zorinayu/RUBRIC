@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from imblearn.over_sampling import SMOTE, BorderlineSMOTE, SVMSMOTE, KMeansSMOTE, ADASYN
+from imblearn.combine import SMOTETomek, SMOTEENN
 from typing import Tuple
 import time
 
@@ -68,6 +69,24 @@ def kmeans_smote_oversample(X: np.ndarray, y: np.ndarray, random_state=42, k_nei
     X_res, y_res = kms.fit_resample(X, y)
     return X_res, y_res
 
+def smote_tomek_resample(X: np.ndarray, y: np.ndarray, random_state=42, ratio=1.0, k_neighbors=5):
+    """
+    SMOTE + Tomek links cleaning combined resampling.
+    """
+    print(f"   Generating SMOTE-Tomek samples...")
+    st = SMOTETomek(sampling_strategy=ratio, random_state=random_state, smote=SMOTE(k_neighbors=k_neighbors, random_state=random_state))
+    X_res, y_res = st.fit_resample(X, y)
+    return X_res, y_res
+
+def smote_enn_resample(X: np.ndarray, y: np.ndarray, random_state=42, ratio=1.0, k_neighbors=5):
+    """
+    SMOTE + ENN cleaning combined resampling.
+    """
+    print(f"   Generating SMOTE-ENN samples...")
+    se = SMOTEENN(sampling_strategy=ratio, random_state=random_state, smote=SMOTE(k_neighbors=k_neighbors, random_state=random_state))
+    X_res, y_res = se.fit_resample(X, y)
+    return X_res, y_res
+
 # -------------------- Generator-agnostic factory + Adv filter wrapper --------------------
 
 def make_oversampler(kind: str, ratio: float, random_state: int, k_neighbors: int = 5):
@@ -76,8 +95,18 @@ def make_oversampler(kind: str, ratio: float, random_state: int, k_neighbors: in
         return SMOTE(sampling_strategy=ratio, k_neighbors=k_neighbors, random_state=random_state)
     elif kind_l in ('borderline', 'borderline-smote', 'bsmote'):
         return BorderlineSMOTE(sampling_strategy=ratio, k_neighbors=k_neighbors, random_state=random_state, kind='borderline-1')
+    elif kind_l in ('borderline2', 'borderline-2'):
+        return BorderlineSMOTE(sampling_strategy=ratio, k_neighbors=k_neighbors, random_state=random_state, kind='borderline-2')
     elif kind_l in ('svm', 'svm-smote'):
         return SVMSMOTE(sampling_strategy=ratio, k_neighbors=k_neighbors, m_neighbors=10, random_state=random_state)
+    elif kind_l in ('kmeans', 'kmeans-smote'):
+        return KMeansSMOTE(sampling_strategy=ratio, k_neighbors=k_neighbors, random_state=random_state)
+    elif kind_l in ('smote-tomek', 'tomek'):
+        return SMOTETomek(sampling_strategy=ratio, random_state=random_state, smote=SMOTE(k_neighbors=k_neighbors, random_state=random_state))
+    elif kind_l in ('smote-enn', 'enn'):
+        return SMOTEENN(sampling_strategy=ratio, random_state=random_state, smote=SMOTE(k_neighbors=k_neighbors, random_state=random_state))
+    elif kind_l in ('adasyn',):
+        return ADASYN(sampling_strategy=ratio, n_neighbors=k_neighbors, random_state=random_state)
     else:
         raise ValueError(f"Unknown generator: {kind}")
 
