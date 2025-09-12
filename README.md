@@ -232,8 +232,8 @@ If you use this code in your research, please cite:
 
 ```bibtex
 @misc{smoteadv2024,
-  title={SMOTE-Adv: Adversarially-Filtered SMOTE for Imbalanced Classification},
-  author={Yanxuan Yu},
+  title={SMOTE-ADV: Generator-agnostic Adversarial Filtering for Imbalanced Classification},
+  author={Yanxuan Yu and Dong Liu},
   year={2024},
   url={https://github.com/zorinayu/SMOTE-Adv}
 }
