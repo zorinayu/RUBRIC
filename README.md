@@ -191,12 +191,7 @@ Paired deltas (+ADV − base), mean ± 95% CI (bootstrap), with permutation-test
 
 | Generator | ΔPR-AUC | ΔRecall@FPR=1% | ΔLift@5% | ΔF1-Macro |
 |-----------|---------|-----------------|----------|-----------|
-| SMOTE | see `outputs/creditcard_comparison_report/delta_stats_pr_auc.csv` | see CSV | see CSV | see CSV |
-| Borderline-SMOTE | see CSV | see CSV | see CSV | see CSV |
-| SVM-SMOTE | see CSV | see CSV | see CSV | see CSV |
-| SMOTE-Tomek | see CSV | see CSV | see CSV | see CSV |
-| SMOTE-ENN | see CSV | see CSV | see CSV | see CSV |
-| ADASYN | see CSV | see CSV | see CSV | see CSV |
+| SMOTE | -0.0275 [-0.0275, -0.0275] (p=1.0000) | – | – | -0.00258 [-0.00258, -0.00258] (p=1.0000) |
 
 Figures:
 - Paired deltas per metric: `outputs/creditcard_comparison_report/paired_deltas.png`
@@ -217,12 +212,9 @@ Paired deltas (+ADV − base), mean ± 95% CI (bootstrap), with permutation-test
 
 | Generator | ΔPR-AUC | ΔRecall@FPR=1% | ΔLift@5% | ΔF1-Macro |
 |-----------|---------|-----------------|----------|-----------|
-| SMOTE | see `outputs/nsl_kdd_comparison_report/delta_stats_pr_auc.csv` | see CSV | see CSV | see CSV |
-| Borderline-SMOTE | see CSV | see CSV | see CSV | see CSV |
-| SVM-SMOTE | see CSV | see CSV | see CSV | see CSV |
-| SMOTE-Tomek | see CSV | see CSV | see CSV | see CSV |
-| SMOTE-ENN | see CSV | see CSV | see CSV | see CSV |
-| ADASYN | see CSV | see CSV | see CSV | see CSV |
+| SMOTE | -0.000008 [-0.000008, -0.000008] (p=1.0000) | – | – | 0.000101 [0.000101, 0.000101] (p=1.0000) |
+| SMOTE-ENN | 0.000721 [0.000721, 0.000721] (p=1.0000) | – | – | -0.002060 [-0.002060, -0.002060] (p=1.0000) |
+| SMOTE-Tomek | 0.000024 [0.000024, 0.000024] (p=1.0000) | – | – | -0.000370 [-0.000370, -0.000370] (p=1.0000) |
 
 Figures:
 - Paired deltas per metric: `outputs/nsl_kdd_comparison_report/paired_deltas.png`

@@ -1,5 +1,8 @@
 # Data and outputs (do not version large datasets or generated artifacts)
 data/**
+# allow these two report directories to be versioned
+!outputs/creditcard_comparison_report/**
+!outputs/nsl_kdd_comparison_report/**
 outputs/**
 
 # Checkpoints and caches
