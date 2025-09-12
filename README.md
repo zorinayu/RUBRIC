@@ -185,13 +185,30 @@ Notes:
 - The ADV filter is the same across generators; only `--gen-kind` switches the underlying oversampler.
 - To avoid invalid ratios on balanced datasets, the training script auto-adjusts an effective target ratio slightly above the current minority/majority ratio.
 
-### Results (Credit Card Fraud, multi-seed, RFF=300, median-gamma)
+### Results (Credit Card Fraud, seed=42, RFF=300, median-gamma)
 
-Paired deltas (+ADV − base), mean ± 95% CI (bootstrap), with permutation-test p-values, aggregated across seeds.
+Paired base vs +ADV (on the same underlying generator).
 
-| Generator | ΔPR-AUC | ΔRecall@FPR=1% | ΔLift@5% | ΔF1-Macro |
-|-----------|---------|-----------------|----------|-----------|
-| SMOTE | -0.0275 [-0.0275, -0.0275] (p=1.0000) | – | – | -0.00258 [-0.00258, -0.00258] (p=1.0000) |
+| Generator | ROC-AUC (base) | PR-AUC (base) | F1-Macro (base) | ROC-AUC (+ADV) | PR-AUC (+ADV) | F1-Macro (+ADV) | ΔPR-AUC | ΔF1-Macro |
+|-----------|-----------------|---------------|------------------|----------------|---------------|------------------|---------|-----------|
+| SMOTE | 0.958127 | 0.510969 | 0.549454 | 0.939537 | 0.483470 | 0.546874 | -0.027499 | -0.002580 |
+| Borderline-SMOTE | 0.943584 | 0.548030 | 0.667823 | 0.948718 | 0.559856 | 0.676186 | +0.011826 | +0.008363 |
+| SVM-SMOTE | 0.961384 | 0.660808 | 0.666227 | 0.951057 | 0.652371 | 0.665675 | -0.008437 | -0.000551 |
+
+Absolute metrics (all methods in this run):
+
+| Method | ROC-AUC | PR-AUC | F1-Weighted | F1-Macro |
+|--------|---------|--------|-------------|----------|
+| None | 0.967888 | 0.527398 | 0.988012 | 0.556972 |
+| SMOTE | 0.958127 | 0.510969 | 0.986508 | 0.549454 |
+| ADASYN | 0.911581 | 0.386259 | 0.978275 | 0.521606 |
+| Borderline-SMOTE | 0.943584 | 0.548030 | 0.996416 | 0.667823 |
+| SVM-SMOTE | 0.961384 | 0.660808 | 0.995961 | 0.666227 |
+| SMOTE + ADV | 0.939537 | 0.483470 | 0.987263 | 0.546874 |
+| Borderline + ADV | 0.948718 | 0.559856 | 0.996586 | 0.676186 |
+| SMOTE-Tomek + ADV | 0.858890 | 0.418473 | 0.989305 | 0.547409 |
+| SMOTE-ENN + ADV | 0.881601 | 0.433934 | 0.989316 | 0.553480 |
+| SVM-SMOTE + ADV | 0.951057 | 0.652371 | 0.996153 | 0.665675 |
 
 Figures:
 - Paired deltas per metric: `outputs/creditcard_comparison_report/paired_deltas.png`
@@ -206,15 +223,32 @@ Runtime (seconds, averaged over seeds):
 
 ---
 
-### Results (NSL-KDD, multi-seed, RFF=300, median-gamma)
+### Results (NSL-KDD, seed=42, RFF=300, median-gamma)
 
-Paired deltas (+ADV − base), mean ± 95% CI (bootstrap), with permutation-test p-values, aggregated across seeds.
+Paired base vs +ADV (on the same underlying generator).
 
-| Generator | ΔPR-AUC | ΔRecall@FPR=1% | ΔLift@5% | ΔF1-Macro |
-|-----------|---------|-----------------|----------|-----------|
-| SMOTE | -0.000008 [-0.000008, -0.000008] (p=1.0000) | – | – | 0.000101 [0.000101, 0.000101] (p=1.0000) |
-| SMOTE-ENN | 0.000721 [0.000721, 0.000721] (p=1.0000) | – | – | -0.002060 [-0.002060, -0.002060] (p=1.0000) |
-| SMOTE-Tomek | 0.000024 [0.000024, 0.000024] (p=1.0000) | – | – | -0.000370 [-0.000370, -0.000370] (p=1.0000) |
+| Generator | ROC-AUC (base) | PR-AUC (base) | F1-Macro (base) | ROC-AUC (+ADV) | PR-AUC (+ADV) | F1-Macro (+ADV) | ΔPR-AUC | ΔF1-Macro |
+|-----------|-----------------|---------------|------------------|----------------|---------------|------------------|---------|-----------|
+| SMOTE | 0.996364 | 0.996565 | 0.977206 | 0.996367 | 0.996557 | 0.977307 | -0.000008 | +0.000101 |
+| Borderline-SMOTE | 0.996617 | 0.996394 | 0.973883 | 0.996606 | 0.996598 | 0.974788 | +0.000204 | +0.000905 |
+| SVM-SMOTE | 0.996723 | 0.996045 | 0.976210 | 0.996587 | 0.996169 | 0.975260 | +0.000124 | -0.000950 |
+| SMOTE-ENN | 0.995442 | 0.995825 | 0.979166 | 0.996373 | 0.996546 | 0.977106 | +0.000721 | -0.002060 |
+| SMOTE-Tomek | 0.996316 | 0.996540 | 0.977544 | 0.996376 | 0.996564 | 0.977174 | +0.000024 | -0.000370 |
+
+Absolute metrics (all methods in this run):
+
+| Method | ROC-AUC | PR-AUC | F1-Weighted | F1-Macro |
+|--------|---------|--------|-------------|----------|
+| None | 0.996362 | 0.996530 | 0.977274 | 0.977241 |
+| SMOTE | 0.996364 | 0.996565 | 0.977240 | 0.977206 |
+| ADASYN | 0.996746 | 0.996597 | 0.973813 | 0.973781 |
+| Borderline-SMOTE | 0.996617 | 0.996394 | 0.973914 | 0.973883 |
+| SVM-SMOTE | 0.996723 | 0.996045 | 0.976237 | 0.976210 |
+| SMOTE + ADV | 0.996367 | 0.996557 | 0.977341 | 0.977307 |
+| Borderline + ADV | 0.996606 | 0.996598 | 0.974821 | 0.974788 |
+| SMOTE-Tomek + ADV | 0.996376 | 0.996564 | 0.977207 | 0.977174 |
+| SMOTE-ENN + ADV | 0.996373 | 0.996546 | 0.977140 | 0.977106 |
+| SVM-SMOTE + ADV | 0.996587 | 0.996169 | 0.975292 | 0.975260 |
 
 Figures:
 - Paired deltas per metric: `outputs/nsl_kdd_comparison_report/paired_deltas.png`
