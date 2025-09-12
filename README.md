@@ -216,6 +216,10 @@ Engineering School, Columbia University
 Email: yy3523@columbia.edu  
 GitHub: [@zorinayu](https://github.com/zorinayu)
 
+**Dong Liu**  
+Department of Computer Science, Yale University  
+Email: dong.liu.dl2367@yale.edu
+
 ## License
 
 MIT
