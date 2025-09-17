@@ -23,6 +23,8 @@ from augment import (
     generate_then_filter,
     smote_tomek_resample,
     smote_enn_resample,
+    make_oversampler,
+    adv_select_synthetics,
 )
 from models.svm_rff import SVMWithRFF
 from evaluate import evaluate_and_plot
@@ -55,6 +57,29 @@ def parse_args():
     p.add_argument('--grid', action='store_true', help='Enable small grid over C, keep, w_density')
     p.add_argument('--gen-kind', type=str, default='smote', choices=['smote','borderline','borderline2','svm','kmeans','smote-tomek','smote-enn','adasyn'], help='Underlying generator for SMOTE-ADV filter')
     p.add_argument('--adapt-keep', action='store_true', help='Enable one-shot adaptive keep_top_frac fallback using recall@FPR=1% on a validation split')
+    # --- ADV selection improvements ---
+    p.add_argument('--adv-mode', type=str, default='soft', choices=['hard','soft'],
+                   help='Hard = keep/drop; Soft = sample_weight from score.')
+    p.add_argument('--w-utility', type=float, default=0.40,
+                   help='Weight of boundary utility score U for ADV selection.')
+    p.add_argument('--w-density2', type=float, default=None,
+                   help='Optional override for density weight; falls back to --w-density if None.')
+    p.add_argument('--adv-density-k', type=int, default=11,
+                   help='k for kNN density on minority manifold (ADV).')
+    p.add_argument('--adv-thresh-mode', type=str, default='val-pr-auc', choices=['val-pr-auc','quantile'],
+                   help='Pick threshold by proxy PR-AUC on a validation split, or by a fixed quantile.')
+    p.add_argument('--adv-keep-quantile', type=float, default=0.6,
+                   help='If thresh-mode=quantile, keep top q fraction by blended score.')
+    p.add_argument('--adv-norm', type=str, default='rank', choices=['none','minmax','rank'],
+                   help='Normalization for combining R, U, D.')
+    p.add_argument('--adv-proxy', type=str, default='logreg', choices=['logreg','xgb'],
+                   help='Quick proxy classifier used to choose threshold by PR-AUC.')
+    p.add_argument('--adv-val-frac', type=float, default=0.2,
+                   help='Fraction of TRAIN to use as inner validation for threshold tuning (ADV).')
+    p.add_argument('--adv-min-keep-per-decile', type=int, default=5,
+                   help='Safety floor: keep at least N points per density decile to preserve submodes (ADV).')
+    p.add_argument('--adv-max-keep-per-decile', type=int, default=1000000,
+                   help='Safety cap per density decile (ADV).')
     return p.parse_args()
 
 
@@ -164,6 +189,7 @@ def main():
         print(f"   Adjusted target ratio from {args.target_ratio} to {effective_ratio:.3f} (current minority/majority={current_ratio:.3f})")
 
     # Augmentation
+    model_sample_weight = None
     if args.augment == 'none':
         print("Skipping data augmentation")
     elif args.augment == 'smote':
@@ -173,50 +199,54 @@ def main():
         aug_times['augment_total_s'] = float(time.time() - t0)
         print(f"   After SMOTE: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
     elif args.augment == 'smote-adv':
-        # Keep copy before augmentation for inner validation
+        # New ADV selection: generate, then ADV soft/hard select by PR-AUC alignment
+        # Keep original copies for optional adapt_keep inner validation
         orig_X_tr, orig_y_tr = X_tr.copy(), y_tr.copy()
-        # Gen-aware defaults for weights/keep if user didn't override
-        if (
-            abs(args.w_realism - 0.6) < 1e-9 and abs(args.w_density - 0.3) < 1e-9 and abs(args.w_majority - 0.1) < 1e-9
-            and abs(args.keep_top_frac - 0.65) < 1e-9 and not args.grid
-        ):
-            kind = (args.gen_kind or 'smote').lower()
-            if kind in ('svm', 'svm-smote'):
-                args.w_realism, args.w_density, args.w_majority = 0.6, 0.25, 0.15
-                args.keep_top_frac = 0.55
-                print("Gen-aware defaults applied for SVM-SMOTE: weights=(0.6,0.25,0.15), keep_top_frac=0.55")
-            elif kind in ('borderline', 'borderline-smote', 'borderline2', 'borderline-2'):
-                args.w_realism, args.w_density, args.w_majority = 0.5, 0.3, 0.2
-                # keep within 0.6-0.7; choose mid
-                args.keep_top_frac = 0.65
-                print("Gen-aware defaults applied for Borderline-SMOTE: weights=(0.5,0.3,0.2), keep_top_frac=0.65")
-            elif kind in ('smote', 'adasyn'):
-                args.w_realism, args.w_density, args.w_majority = 0.55, 0.3, 0.15
-                print("Gen-aware defaults applied for SMOTE/ADASYN: weights=(0.55,0.3,0.15)")
-
-        print(f"Applying {args.gen_kind.upper()} + Adversarial Filtering (SMOTE-ADV)...")
+        print(f"Applying {args.gen_kind.upper()} + ADV selection ({args.adv_mode})...")
         t0 = time.time()
-        X_tr, y_tr = generate_then_filter(
-            X_tr, y_tr,
-            generator=args.gen_kind,
-            ratio=effective_ratio,
-            random_state=args.seed,
-            keep_top_frac=args.keep_top_frac,
-            max_iter=500,
-            C=args.adv_C,
-            k_density=args.k_density,
-            k_majority=args.k_majority,
-            weights=(args.w_realism, args.w_density, args.w_majority),
-            gate_frac=args.gate_frac,
-            return_times=aug_times,
+        # Step 1: generate with chosen generator
+        osr = make_oversampler(args.gen_kind, effective_ratio, args.seed, k_neighbors=5)
+        X_res, y_res = osr.fit_resample(X_tr, y_tr)
+        gen_time = time.time() - t0
+        # Step 2: extract synthetic minority
+        n_orig = len(X_tr)
+        X_tail, y_tail = X_res[n_orig:], y_res[n_orig:]
+        X_min_synth = X_tail[y_tail == 1]
+        X_min_real = X_tr[y_tr == 1]
+        # Step 3: ADV selection
+        t1 = time.time()
+        sel = adv_select_synthetics(
+            X_train=X_tr,
+            y_train=y_tr,
+            X_min_real=X_min_real,
+            X_min_synth=X_min_synth,
+            args=args,
         )
+        sel_time = time.time() - t1
+        # Step 4: build augmented training set
+        if args.adv_mode == 'soft':
+            synth_weights = sel  # [0,1]
+            X_tr = np.vstack([X_tr, X_min_synth])
+            y_tr = np.hstack([y_tr, np.ones(len(X_min_synth), dtype=int)])
+            base_w = np.ones(len(X_tr) - len(X_min_synth), dtype=float)
+            lam = 1.0
+            w_synth = 1.0 + lam * synth_weights
+            model_sample_weight = np.hstack([base_w, w_synth])
+            kept = len(X_min_synth)
+        else:
+            keep_mask = sel.astype(bool)
+            X_tr = np.vstack([X_tr, X_min_synth[keep_mask]])
+            y_tr = np.hstack([y_tr, np.ones(int(keep_mask.sum()), dtype=int)])
+            kept = int(keep_mask.sum())
+        aug_times['smote_generate_s'] = float(gen_time)
+        aug_times['adv_select_s'] = float(sel_time)
         aug_times['augment_total_s'] = float(time.time() - t0)
-        print(f"   After {args.gen_kind}+Adv: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
+        print(f"   ADV kept/weighted {kept}/{len(X_min_synth)} synthetic samples")
+        print(f"   After {args.gen_kind}+ADV: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
 
         # Optional: one-shot adaptive keep fallback based on Recall@FPR=1%
         if args.adapt_keep:
             print("   Adaptive keep check on validation split (Recall@FPR=1%)...")
-            from augment import make_oversampler
             from sklearn.model_selection import train_test_split as _tts
 
             X_tr_in, X_val_in, y_tr_in, y_val_in = _tts(orig_X_tr, orig_y_tr, test_size=0.25, stratify=orig_y_tr, random_state=args.seed)
@@ -380,7 +410,10 @@ def main():
     print("\nTraining SVM with RFF features...")
     t_train = time.time()
     model = SVMWithRFF(n_components=args.rbf_components, gamma=gamma, C=args.svm_C, random_state=args.seed)
-    model.fit(X_tr, y_tr)
+    try:
+        model.fit(X_tr, y_tr, sample_weight=model_sample_weight)
+    except TypeError:
+        model.fit(X_tr, y_tr)
     t_train = time.time() - t_train
     print("   Model training completed")
 
@@ -420,6 +453,17 @@ def main():
             'k_majority': args.k_majority,
             'weights': [args.w_realism, args.w_density, args.w_majority],
             'gate_frac': args.gate_frac,
+            'adv_mode': args.adv_mode,
+            'w_utility': args.w_utility,
+            'w_density2': args.w_density2,
+            'adv_density_k': args.adv_density_k,
+            'adv_thresh_mode': args.adv_thresh_mode,
+            'adv_keep_quantile': args.adv_keep_quantile,
+            'adv_norm': args.adv_norm,
+            'adv_proxy': args.adv_proxy,
+            'adv_val_frac': args.adv_val_frac,
+            'adv_min_keep_per_decile': args.adv_min_keep_per_decile,
+            'adv_max_keep_per_decile': args.adv_max_keep_per_decile,
         } if args.augment == 'smote-adv' else None,
     }
 

@@ -2,6 +2,9 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import average_precision_score
 from imblearn.over_sampling import SMOTE, BorderlineSMOTE, SVMSMOTE, KMeansSMOTE, ADASYN
 from imblearn.combine import SMOTETomek, SMOTEENN
 from typing import Tuple
@@ -168,6 +171,13 @@ def generate_then_filter(
 
 from sklearn.neighbors import NearestNeighbors
 
+# Optional: XGBoost for proxy model if available
+try:
+    from xgboost import XGBClassifier
+    _HAS_XGB = True
+except Exception:
+    _HAS_XGB = False
+
 def adversarial_filter_synthetic(
     X_real_min,
     X_synth_min,
@@ -262,6 +272,181 @@ def adversarial_filter_synthetic(
 
     print(f"   Kept {len(keep_idx)}/{len(X_synth_min)} synthetic samples after SMOTE-ADV filtering")
     return X_synth_min[keep_idx]
+
+# -------------------- PR-AUC-aligned ADV selection (soft/hard) --------------------
+
+import numpy as np
+
+def _knn_density(X_minority: np.ndarray, k: int = 11) -> np.ndarray:
+    k = min(k, max(2, len(X_minority) - 1))
+    nbrs = NearestNeighbors(n_neighbors=k, algorithm="auto").fit(X_minority)
+    dists, _ = nbrs.kneighbors(X_minority)
+    if dists.shape[1] > 1 and np.allclose(dists[:, 0], 0):
+        dists = dists[:, 1:]
+    inv_mean = 1.0 / (1e-9 + dists.mean(axis=1))
+    return inv_mean
+
+def _rank_norm(v: np.ndarray) -> np.ndarray:
+    order = np.argsort(v)
+    ranks = np.empty_like(order, dtype=float)
+    ranks[order] = np.arange(len(v), dtype=float)
+    return ranks / max(1, len(v) - 1)
+
+def _minmax(v: np.ndarray) -> np.ndarray:
+    v = v.astype(float)
+    lo, hi = float(np.min(v)), float(np.max(v))
+    if hi <= lo + 1e-12:
+        return np.zeros_like(v, dtype=float)
+    return (v - lo) / (hi - lo)
+
+def _normalize(v: np.ndarray, mode: str) -> np.ndarray:
+    if mode == "rank":
+        return _rank_norm(v)
+    if mode == "minmax":
+        return _minmax(v)
+    return v.astype(float)
+
+def _train_calibrated_discriminator(X_real_min: np.ndarray, X_synth_min: np.ndarray, C: float = 2.0):
+    X = np.vstack([X_real_min, X_synth_min])
+    y = np.hstack([np.ones(len(X_real_min), dtype=int), np.zeros(len(X_synth_min), dtype=int)])
+    clf = LogisticRegression(C=C, penalty="l2", solver="liblinear", max_iter=200)
+    cal = CalibratedClassifierCV(clf, method="sigmoid", cv=3)
+    cal.fit(X, y)
+    return cal
+
+def _proxy_model(name: str, random_state: int = 42):
+    if name == "xgb" and _HAS_XGB:
+        return XGBClassifier(
+            n_estimators=200,
+            max_depth=4,
+            learning_rate=0.1,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            reg_lambda=1.0,
+            eval_metric="aucpr",
+            random_state=random_state,
+            n_jobs=-1,
+        )
+    return LogisticRegression(C=1.0, penalty="l2", solver="liblinear", max_iter=300)
+
+def _proxy_pr_auc(X_tr, y_tr, X_val, y_val, sample_weight=None, proxy_name="logreg", random_state=42) -> float:
+    proxy = _proxy_model(proxy_name, random_state)
+    try:
+        proxy.fit(X_tr, y_tr, sample_weight=sample_weight)
+    except TypeError:
+        proxy.fit(X_tr, y_tr)
+    try:
+        p = proxy.predict_proba(X_val)[:, 1]
+    except Exception:
+        s = proxy.decision_function(X_val)
+        p = _minmax(s)
+    return average_precision_score(y_val, p)
+
+def _utility_score(boundary_model, X_synth_min: np.ndarray, norm: str = "rank") -> np.ndarray:
+    try:
+        p = boundary_model.predict_proba(X_synth_min)[:, 1]
+    except Exception:
+        s = boundary_model.decision_function(X_synth_min)
+        p = _minmax(s)
+    u = 1.0 - np.abs(p - 0.5) * 2.0
+    return _normalize(u, norm)
+
+def _fit_boundary_model_for_utility(X_train, y_train):
+    return LogisticRegression(C=1.0, penalty="l2", solver="liblinear", max_iter=300).fit(X_train, y_train)
+
+def _decile_bins(values: np.ndarray, n_bins: int = 10):
+    qs = np.quantile(values, np.linspace(0, 1, n_bins + 1))
+    qs = np.unique(qs)
+    bins = np.digitize(values, qs[1:-1], right=True)
+    return bins, len(qs) - 1
+
+def adv_select_synthetics(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_min_real: np.ndarray,
+    X_min_synth: np.ndarray,
+    args,
+    rng=np.random,
+):
+    disc = _train_calibrated_discriminator(
+        X_min_real, X_min_synth, C=args.adv_C if hasattr(args, "adv_C") else 2.0
+    )
+    R = disc.predict_proba(X_min_synth)[:, 1]
+
+    X_tr, X_val, y_tr, y_val = train_test_split(
+        X_train, y_train, test_size=getattr(args, 'adv_val_frac', 0.2), stratify=y_train, random_state=42
+    )
+    boundary = _fit_boundary_model_for_utility(X_tr, y_tr)
+    U = _utility_score(boundary, X_min_synth, norm=getattr(args, 'adv_norm', 'rank'))
+
+    dens_real = _knn_density(X_min_real, k=getattr(args, 'adv_density_k', 11))
+    nn = NearestNeighbors(n_neighbors=1).fit(X_min_real)
+    _, idx = nn.kneighbors(X_min_synth, n_neighbors=1)
+    D = dens_real[idx[:, 0]]
+
+    w_density_final = args.w_density2 if getattr(args, 'w_density2', None) is not None else getattr(args, 'w_density', 0.3)
+    Rn = _normalize(R, getattr(args, 'adv_norm', 'rank'))
+    Un = _normalize(U, getattr(args, 'adv_norm', 'rank'))
+    Dn = _normalize(D, getattr(args, 'adv_norm', 'rank'))
+
+    alpha = getattr(args, 'w_realism', 0.4)
+    beta = getattr(args, 'w_utility', 0.4)
+    gamma = w_density_final
+    S = alpha * Rn + beta * Un + gamma * Dn
+
+    dec, _ = _decile_bins(Dn, n_bins=10)
+    keep_floor = getattr(args, 'adv_min_keep_per_decile', 5)
+
+    if getattr(args, 'adv_mode', 'soft') == 'soft':
+        w = _normalize(S, getattr(args, 'adv_norm', 'rank'))
+        temps = [0.5, 1.0, 2.0]
+        best_ap, best_w = -1.0, w
+        for t in temps:
+            wt = np.power(w, 1.0 / t)
+            ap = _proxy_pr_auc(X_tr, y_tr, X_val, y_val, sample_weight=None, proxy_name=getattr(args, 'adv_proxy', 'logreg'))
+            if ap > best_ap:
+                best_ap, best_w = ap, wt
+        w_final = best_w.copy()
+        for b in np.unique(dec):
+            idx_b = np.where(dec == b)[0]
+            if len(idx_b) == 0:
+                continue
+            if (w_final[idx_b] > 1e-8).sum() < keep_floor:
+                topk = np.argsort(w_final[idx_b])[::-1][:min(keep_floor, len(idx_b))]
+                w_final[idx_b[topk]] = np.maximum(w_final[idx_b[topk]], 1e-3)
+        return w_final
+
+    # hard mode
+    if getattr(args, 'adv_thresh_mode', 'val-pr-auc') == 'quantile':
+        q = float(getattr(args, 'adv_keep_quantile', 0.6))
+        thr = np.quantile(S, 1.0 - q)
+        keep = S >= thr
+    else:
+        quantiles = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+        best_ap, best_keep = -1.0, None
+        for q in quantiles:
+            thr = np.quantile(S, 1.0 - q)
+            mask = S >= thr
+            for b in np.unique(dec):
+                idx_b = np.where(dec == b)[0]
+                m_b = np.where(mask[idx_b])[0]
+                if len(m_b) < keep_floor and len(idx_b) > 0:
+                    topk = np.argsort(S[idx_b])[::-1][:min(keep_floor, len(idx_b))]
+                    mask[idx_b[topk]] = True
+                max_cap = getattr(args, 'adv_max_keep_per_decile', 1000000)
+                if mask[idx_b].sum() > max_cap:
+                    topk = np.argsort(S[idx_b])[::-1][:max_cap]
+                    tmp = np.zeros_like(mask[idx_b], dtype=bool)
+                    tmp[topk] = True
+                    mask[idx_b] = tmp
+            X_aug = np.vstack([X_tr, X_min_synth[mask]])
+            y_aug = np.hstack([y_tr, np.ones(mask.sum(), dtype=int)])
+            ap = _proxy_pr_auc(X_aug, y_aug, X_val, y_val, sample_weight=None, proxy_name=getattr(args, 'adv_proxy', 'logreg'))
+            if ap > best_ap:
+                best_ap, best_keep = ap, mask
+        keep = best_keep
+
+    return keep.astype(bool)
 
 def smote_then_adversarial_filter(
     X,
@@ -398,3 +583,59 @@ def analyze_smote_adv_performance(X_original, y_original, X_smote_adv, y_smote_a
     print("\n" + "="*60)
     print("Analysis Complete")
     print("="*60)
+
+
+def quick_smoke_test(X, y, rng=42):
+    """
+    Train/val/test split once, run 4 conditions quickly:
+    None, SMOTE, SMOTE+ADV(hard), SMOTE+ADV(soft)
+    Print PR-AUC deltas to sanity-check selection logic quickly.
+    """
+    from sklearn.model_selection import train_test_split as _tts
+    from imblearn.over_sampling import SMOTE as _SMOTE
+
+    X_tr, X_te, y_tr, y_te = _tts(X, y, test_size=0.2, stratify=y, random_state=rng)
+    base = _proxy_model("logreg", rng).fit(X_tr, y_tr)
+    p_base = base.predict_proba(X_te)[:, 1]
+    ap_base = average_precision_score(y_te, p_base)
+
+    Xs, ys = _SMOTE(random_state=rng, k_neighbors=5).fit_resample(X_tr, y_tr)
+    base_sm = _proxy_model("logreg", rng).fit(Xs, ys)
+    ap_sm = average_precision_score(y_te, base_sm.predict_proba(X_te)[:, 1])
+
+    y_tr_arr = np.asarray(y_tr)
+    X_min_real = X_tr[y_tr_arr == 1]
+    Xs2, ys2 = _SMOTE(random_state=rng, k_neighbors=5).fit_resample(X_tr, y_tr)
+    synth_idx = np.where((ys2 == 1))[0][len(np.where(y_tr == 1)[0]):]
+    X_min_synth = Xs2[synth_idx]
+
+    class _Args: pass
+    args = _Args()
+    args.adv_C = 2.0
+    args.w_density = 0.2
+    args.w_density2 = None
+    args.w_realism = 0.4
+    args.w_utility = 0.4
+    args.adv_density_k = 11
+    args.adv_norm = "rank"
+    args.adv_proxy = "logreg"
+    args.adv_val_frac = 0.2
+    args.adv_min_keep_per_decile = 5
+    args.adv_max_keep_per_decile = 10**9
+    args.adv_mode = "hard"
+    args.adv_thresh_mode = "val-pr-auc"
+    args.adv_keep_quantile = 0.6
+
+    keep = adv_select_synthetics(X_tr, y_tr, X_min_real, X_min_synth, args)
+    X_aug_h = np.vstack([X_tr, X_min_synth[keep]])
+    y_aug_h = np.hstack([y_tr, np.ones(keep.sum(), dtype=int)])
+    ap_hard = average_precision_score(y_te, _proxy_model("logreg", rng).fit(X_aug_h, y_aug_h).predict_proba(X_te)[:, 1])
+
+    args.adv_mode = "soft"
+    w = adv_select_synthetics(X_tr, y_tr, X_min_real, X_min_synth, args)
+    X_aug_s = np.vstack([X_tr, X_min_synth])
+    y_aug_s = np.hstack([y_tr, np.ones(len(X_min_synth), dtype=int)])
+    sw = np.hstack([np.ones(len(X_tr)), 1.0 + 1.0 * w])
+    ap_soft = average_precision_score(y_te, _proxy_model("logreg", rng).fit(X_aug_s, y_aug_s, sample_weight=sw).predict_proba(X_te)[:, 1])
+
+    print(f"[QuickSmoke] PR-AUC base={ap_base:.3f} | SMOTE={ap_sm:.3f} | ADV-hard={ap_hard:.3f} | ADV-soft={ap_soft:.3f}")

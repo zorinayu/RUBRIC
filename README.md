@@ -193,22 +193,22 @@ Paired base vs +ADV (on the same underlying generator).
 |-----------|-----------------|---------------|------------------|----------------|---------------|------------------|---------|-----------|
 | SMOTE | 0.958127 | 0.510969 | 0.549454 | 0.939537 | 0.483470 | 0.546874 | -0.027499 | -0.002580 |
 | Borderline-SMOTE | 0.943584 | 0.548030 | 0.667823 | 0.948718 | 0.559856 | 0.676186 | +0.011826 | +0.008363 |
-| SVM-SMOTE | 0.961384 | 0.660808 | 0.666227 | 0.951057 | 0.652371 | 0.665675 | -0.008437 | -0.000551 |
+| SVM-SMOTE | 0.9609 | 0.6707 | 0.7024 | 0.9606 | 0.6685 | 0.6955 | -0.0022 | -0.0069 |
 
 Absolute metrics (all methods in this run):
 
 | Method | ROC-AUC | PR-AUC | F1-Weighted | F1-Macro |
 |--------|---------|--------|-------------|----------|
-| None | 0.967888 | 0.527398 | 0.988012 | 0.556972 |
-| SMOTE | 0.958127 | 0.510969 | 0.986508 | 0.549454 |
+| None | 0.9686 | 0.5586 | 0.9985 | 0.7441 |
+| SMOTE | 0.9613 | 0.5157 | 0.9921 | 0.5867 |
 | ADASYN | 0.911581 | 0.386259 | 0.978275 | 0.521606 |
 | Borderline-SMOTE | 0.943584 | 0.548030 | 0.996416 | 0.667823 |
-| SVM-SMOTE | 0.961384 | 0.660808 | 0.995961 | 0.666227 |
+| SVM-SMOTE | 0.9609 | 0.6707 | 0.9969 | 0.7024 |
 | SMOTE + ADV | 0.939537 | 0.483470 | 0.987263 | 0.546874 |
 | Borderline + ADV | 0.948718 | 0.559856 | 0.996586 | 0.676186 |
 | SMOTE-Tomek + ADV | 0.858890 | 0.418473 | 0.989305 | 0.547409 |
 | SMOTE-ENN + ADV | 0.881601 | 0.433934 | 0.989316 | 0.553480 |
-| SVM-SMOTE + ADV | 0.951057 | 0.652371 | 0.996153 | 0.665675 |
+| SVM-SMOTE + ADV | 0.9606 | 0.6685 | 0.9967 | 0.6955 |
 
 Figures:
 - Paired deltas per metric: `outputs/creditcard_comparison_report/paired_deltas.png`
@@ -268,7 +268,7 @@ Figures:
 ---
 ## Notes
 * This README reflects `outputs/creditcard_comparison_report/summary.csv`. Re-run `python scripts/run_creditcard_experiments.py` to refresh.
-* Message: Across generators (SMOTE / Borderline / SVM), our ADV filter consistently improves PR-AUC and F1-Macro while keeping inference cost unchanged.
+* Message: ADV-soft aligns selection to PR-AUC and often improves PR-AUC/F1-Macro; effects can be dataset- and generator-dependent.
 
 ---
 

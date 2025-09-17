@@ -15,13 +15,16 @@ class SVMWithRFF:
         self.clf = None
         self.is_fit = False
 
-    def fit(self, X, y):
+    def fit(self, X, y, sample_weight=None):
         Z = self.rbf.fit_transform(X)
         if self.calibrate:
             self.clf = CalibratedClassifierCV(self._base, method='sigmoid', cv=self.cv)
         else:
             self.clf = self._base
-        self.clf.fit(Z, y)
+        try:
+            self.clf.fit(Z, y, sample_weight=sample_weight)
+        except TypeError:
+            self.clf.fit(Z, y)
         self.is_fit = True
         return self
 
