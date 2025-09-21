@@ -1,19 +1,29 @@
-# SMOTE-ADV: Generator-agnostic Adversarial Filtering for Imbalanced Classification
+# RUBRIC: A Unified Benchmark and Adversarial Filtering Toolkit for Imbalanced Classification
+
+## Why “RUBRIC” and not “SMOTE-ADV”?
+
+RUBRIC reflects the project’s broadened scope. What began as a single method (SMOTE-ADV) has grown into a standardized, extensible benchmark and reference implementation for imbalanced classification. The name emphasizes that the repository provides:
+
+- A unified training/evaluation pipeline and fair baselines
+- A generator-agnostic adversarial filtering add-on (ADV) that works with many oversamplers
+- Reproducible experiments, consistent metrics (ROC-AUC, PR-AUC, F1-Macro), and comparison reports
+
+SMOTE-ADV remains available inside RUBRIC as the “ADV add-on” to common generators (SMOTE, Borderline-SMOTE, SVM-SMOTE, etc.). The rename signals that this repo is now a general rubric for building and comparing imbalanced-learning pipelines, not just one technique.
 
 ## Overview
 
-This project implements SMOTE-ADV, a generator-agnostic adversarial filter that improves the quality of synthetic minority samples on top of different oversamplers (SMOTE / Borderline-SMOTE / SVM-SMOTE), and provides fair baselines for comparison:
+This repository provides a compact, reproducible pipeline for imbalanced classification across multiple datasets, with consistent preprocessing, feature mapping, models, augmentation plug-ins, metrics, and reports:
 
-1. **Up-dimension** via RBF feature mapping (Random Fourier Features)
-2. **SVM** classifier with class weighting
-3. **SMOTE-Adv**: SMOTE followed by adversarial filtering using logistic regression discriminator
-4. **Multi-dataset Support**: Credit Card Fraud and NSL-KDD Network Intrusion Detection
-5. **Down-dimension** for visualization (UMAP/PCA)
-6. **Baselines**: SMOTE, ADASYN, Borderline-SMOTE, SVM-SMOTE (via imbalanced-learn)
+1. Up-dimension via RBF feature mapping (Random Fourier Features)
+2. Linear SVM classifier with class weighting
+3. ADV add-on: adversarial filtering using a logistic regression discriminator
+4. Multi-dataset support: Credit Card Fraud, NSL-KDD
+5. Optional 2D visualization (UMAP/PCA)
+6. Baselines: SMOTE, ADASYN, Borderline-SMOTE, SVM-SMOTE (via imbalanced-learn)
 
-**Supported Datasets**:
-- **Credit Card Fraud Detection** (284,807 transactions; fraud ≈ 0.172%) - Extreme imbalance
-- **NSL-KDD Network Intrusion Detection** (148,517 connections; attacks ≈ 48.12%) - Balanced
+Supported datasets:
+- Credit Card Fraud Detection (284,807 transactions; fraud ≈ 0.172%) — extreme imbalance
+- NSL-KDD Network Intrusion Detection (148,517 connections; attacks ≈ 48.12%) — roughly balanced
 
 ---
 
@@ -28,12 +38,13 @@ pip install -r requirements.txt
 
 ### 1) Download Data (one-time)
 
-**For Credit Card Fraud Dataset:**
-* Visit the [dataset page](https://www.kaggle.com/mlg-ulb/creditcardfraud), download `creditcard.csv`, and place it at `data/creditcard.csv`.
+Credit Card Fraud dataset:
+- Visit the dataset page: https://www.kaggle.com/mlg-ulb/creditcardfraud
+- Download `creditcard.csv` to `data/creditcard.csv`.
 
-**For NSL-KDD Dataset:**
-* Visit the [NSL-KDD dataset page](https://www.kaggle.com/datasets/hassan06/nslkdd), download the dataset files, and place them in `data/NSL-KDD dataset/` directory.
-* Ensure the directory structure matches: `data/NSL-KDD dataset/KDDTrain+.txt`, `data/NSL-KDD dataset/KDDTest+.txt`, etc.
+NSL-KDD dataset:
+- Visit the dataset page: https://www.kaggle.com/datasets/hassan06/nslkdd
+- Place files under `data/NSL-KDD dataset/` (e.g., `KDDTrain+.txt`, `KDDTest+.txt`).
 
 ### 2) Train + Evaluate
 
@@ -46,15 +57,15 @@ python src/train.py --dataset creditcard --augment adasyn --target-ratio 0.3 --r
 python src/train.py --dataset creditcard --augment borderline-smote --target-ratio 0.3 --rbf-gamma -1.0 --seed 42
 python src/train.py --dataset creditcard --augment svm-smote --target-ratio 0.3 --rbf-gamma -1.0 --seed 42
 
-# SMOTE-Adv++ (generator-agnostic). Example 1: SMOTE + Adv filter
+# ADV add-on (generator-agnostic). Example 1: SMOTE + ADV
 python src/train.py --dataset creditcard --augment smote-adv --gen-kind smote --target-ratio 0.3 \
   --keep-frac 0.65 --adv-C 1.0 --rbf-gamma -1.0 --seed 42
 
-# Example 2: Borderline-SMOTE + Adv filter
+# Example 2: Borderline-SMOTE + ADV
 python src/train.py --dataset creditcard --augment smote-adv --gen-kind borderline --target-ratio 0.3 \
   --keep-frac 0.65 --adv-C 1.0 --rbf-gamma -1.0 --seed 42
 
-# Example 3: SVM-SMOTE + Adv filter
+# Example 3: SVM-SMOTE + ADV
 python src/train.py --dataset creditcard --augment smote-adv --gen-kind svm --target-ratio 0.3 \
   --keep-frac 0.65 --adv-C 1.0 --rbf-gamma -1.0 --seed 42
 
@@ -62,27 +73,27 @@ python src/train.py --dataset creditcard --augment smote-adv --gen-kind svm --ta
 python src/train.py --dataset creditcard --augment smote-adv --rbf-components 400 --rbf-gamma 0.5 --svm-C 1.0 --test-size 0.2 --seed 42
 ```
 
-NSL-KDD usage is analogous (optional).
+NSL-KDD usage is analogous.
 
-**Key parameters:**
-* `--dataset`: `creditcard` or `nsl_kdd`
-* `--augment`: `none`, `smote`, `smote-adv`, `adasyn`, `borderline-smote`, `svm-smote`, `smote-tomek`, `smote-enn`
-* `--gen-kind` (when `smote-adv`): `smote`, `borderline`, `borderline2`, `svm`, `kmeans`, `smote-tomek`, `smote-enn`, `adasyn`
-* `--keep-frac` alias of `--keep-top-frac`
-* `--rbf-components`: number of random Fourier features (default: 300)
-* `--rbf-gamma`: RBF bandwidth parameter (default: 0.5)
-* `--svm-C`: SVM regularization strength (default: 1.0)
-* `--test-size`: test set fraction (default: 0.2)
+Key parameters:
+- `--dataset`: `creditcard` or `nsl_kdd`
+- `--augment`: `none`, `smote`, `smote-adv`, `adasyn`, `borderline-smote`, `svm-smote`, `smote-tomek`, `smote-enn`
+- `--gen-kind` (when `smote-adv`): `smote`, `borderline`, `borderline2`, `svm`, `kmeans`, `smote-tomek`, `smote-enn`, `adasyn`
+- `--keep-frac` alias of `--keep-top-frac`
+- `--rbf-components`: number of RFF components (default: 300)
+- `--rbf-gamma`: RBF bandwidth parameter (default: 0.5; `-1.0` means median heuristic)
+- `--svm-C`: SVM regularization strength (default: 1.0)
+- `--test-size`: test set fraction (default: 0.2)
 
 ### 3) Generate Augmented Datasets (optional)
 
-**Credit Card Fraud Dataset:**
+Credit Card Fraud dataset:
 ```bash
 # Generate dataset with a chosen method (example: kmeans-smote)
 python scripts/generate_augmented_datasets.py --method kmeans-smote --dataset creditcard --input data/creditcard.csv --output-dir data/augmented --seed 42
 ```
 
-**NSL-KDD Dataset:**
+NSL-KDD dataset:
 ```bash
 # Generate dataset with a chosen method
 python scripts/generate_augmented_datasets.py --method adasyn --dataset nsl_kdd --output-dir data/augmented --seed 42
@@ -90,52 +101,48 @@ python scripts/generate_augmented_datasets.py --method adasyn --dataset nsl_kdd 
 
 ### 4) Run Complete Experiments
 
-**Credit Card Fraud Detection:**
+Credit Card Fraud Detection:
 ```bash
 python scripts/run_creditcard_experiments.py
 ```
 
-NSL-KDD experiments are optional.
+NSL-KDD experiments are optional:
+```bash
+python scripts/run_nsl_kdd_experiments.py
+```
 
 ### 5) Outputs
 
-* **Metrics**: `outputs/metrics.json`
-* **Plots**: ROC/PR curves in `outputs/plots/`
-* **Augmented datasets**: `data/augmented/*_augmentation_*.csv`
-* **Performance reports**: Detailed analysis in console output
-* **Comparison reports**: `outputs/*_comparison_report/`
+- Metrics per run: `outputs/<run_name>/metrics.json`
+- Plots: ROC/PR curves in `outputs/<run_name>/plots/`
+- Augmented datasets: `data/augmented/*_augmentation_*.csv`
+- Comparison reports: `outputs/*_comparison_report/`
 
 ---
 
 ## Project Structure
 
 ```
-SMOTE-Adv/
-├── data/                           # Dataset directory
-│   ├── creditcard.csv             # Credit card fraud dataset (after download)
-│   ├── NSL-KDD dataset/           # NSL-KDD network intrusion dataset
-│   └── augmented/                 # Generated augmented datasets
-├── outputs/                       # Training results and metrics
-│   ├── comprehensive_report/      # Credit card experiment results
-│   ├── nsl_kdd_comparison_report/ # NSL-KDD experiment results
-│   └── accuracy_analysis/         # Cross-dataset analysis
+RUBRIC/
+├── data/
+│   ├── creditcard.csv
+│   ├── NSL-KDD dataset/
+│   └── augmented/
+├── outputs/
+│   └── <multiple run folders containing metrics.json and plots/>
 ├── scripts/
-│   ├── generate_augmented_datasets.py # Dataset augmentation generator
-│   ├── run_creditcard_experiments.py # Credit card experiment runner
-│   ├── run_nsl_kdd_experiments.py # NSL-KDD experiment runner
-│   └── analyze_accuracy_results.py # Accuracy analysis script
+│   ├── generate_augmented_datasets.py
+│   ├── run_creditcard_experiments.py
+│   └── run_nsl_kdd_experiments.py
 ├── src/
-│   ├── train.py                   # Main training script
-│   ├── data.py                    # Data loading utilities
-│   ├── preprocess.py              # Data preprocessing
-│   ├── augment.py                 # SMOTE-Adv implementation
-│   ├── evaluate.py                # Model evaluation
+│   ├── train.py
+│   ├── data.py
+│   ├── preprocess.py
+│   ├── augment.py            # ADV add-on implementation
+│   ├── evaluate.py
 │   └── models/
-│       └── svm_rff.py             # SVM with RFF implementation
-├── experiments/
-│   └── PLAN.md                    # Experiment planning document
+│       └── svm_rff.py
 ├── requirements.txt
-├── NSL_KDD_USAGE.md               # NSL-KDD usage guide
 └── README.md
 ```
 
@@ -143,25 +150,21 @@ SMOTE-Adv/
 
 ## Baselines and Sources
 
-We compare SMOTE-Adv with widely-used baselines implemented in mature libraries:
+We compare ADV-augmented methods against widely used baselines implemented in mature libraries:
 
 - SMOTE, Borderline-SMOTE, SVMSMOTE, ADASYN from `imbalanced-learn` ([GitHub](https://github.com/scikit-learn-contrib/imbalanced-learn), [Docs](https://imbalanced-learn.org/stable/over_sampling.html))
-Install: `pip install imbalanced-learn`
+  Install: `pip install imbalanced-learn`
 
-## SMOTE-ADV Method
+## Adversarial Filtering (ADV) in RUBRIC
 
 ### Algorithm Overview
 
-SMOTE-ADV enhances oversampling by adding an adversarial filtering step:
+ADV enhances oversampling by adding an adversarial filtering step:
 
-1. **Generate SMOTE samples** to target ratio
-2. **Train adversarial discriminator** (logistic regression) to distinguish real vs synthetic samples
-3. **Filter synthetic samples** by keeping those closest to the decision boundary (hardest to distinguish)
-4. **Combine datasets**: majority original + minority original + filtered synthetic minority
-
-### Key Idea
-
-**Adversarial Filtering**: Keep the hardest-to-distinguish, high-density, majority-distant synthetic samples.
+1. Generate synthetic minority samples to a target ratio
+2. Train a discriminator (logistic regression) to separate real vs synthetic
+3. Keep synthetic samples closest to the decision boundary (hardest to distinguish)
+4. Combine majority + minority originals with the filtered synthetic minority
 
 ### Generator-agnostic usage
 
@@ -182,12 +185,12 @@ python src/train.py --dataset creditcard --augment smote-adv --gen-kind smote-en
 ```
 
 Notes:
-- The ADV filter is the same across generators; only `--gen-kind` switches the underlying oversampler.
-- To avoid invalid ratios on balanced datasets, the training script auto-adjusts an effective target ratio slightly above the current minority/majority ratio.
+- ADV is the same across generators; only `--gen-kind` switches the underlying oversampler.
+- On balanced datasets, the training script auto-adjusts an effective target ratio slightly above the current class ratio to keep settings valid.
 
 ### Results (Credit Card Fraud, seed=42, RFF=300, median-gamma)
 
-Paired base vs +ADV (on the same underlying generator).
+Paired base vs +ADV (same underlying generator):
 
 | Generator | ROC-AUC (base) | PR-AUC (base) | F1-Macro (base) | ROC-AUC (+ADV) | PR-AUC (+ADV) | F1-Macro (+ADV) | ΔPR-AUC | ΔF1-Macro |
 |-----------|-----------------|---------------|------------------|----------------|---------------|------------------|---------|-----------|
@@ -215,17 +218,13 @@ Figures:
 - Win-rate of +ADV over base (PR-AUC): `outputs/creditcard_comparison_report/win_rate.png`
 - Overview plots: `outputs/creditcard_comparison_report/creditcard_comparison_plots.png`
 
-Runtime (seconds, averaged over seeds):
-
-| Method | Augment | Train | Inference |
-|--------|---------|-------|-----------|
-| see `outputs/creditcard_comparison_report/summary.csv` for per-run and averages |
+Runtime (see `outputs/creditcard_comparison_report/summary.csv` for per-run and averages).
 
 ---
 
 ### Results (NSL-KDD, seed=42, RFF=300, median-gamma)
 
-Paired base vs +ADV (on the same underlying generator).
+Paired base vs +ADV (same underlying generator):
 
 | Generator | ROC-AUC (base) | PR-AUC (base) | F1-Macro (base) | ROC-AUC (+ADV) | PR-AUC (+ADV) | F1-Macro (+ADV) | ΔPR-AUC | ΔF1-Macro |
 |-----------|-----------------|---------------|------------------|----------------|---------------|------------------|---------|-----------|
@@ -259,16 +258,15 @@ Figures:
 
 ## Reproducibility
 
-* StandardScaler + median-gamma (`--rbf-gamma -1.0`)
-* Seeds via `--seed`, deterministic scikit-learn settings
-* All configs/metrics persisted per run
+- StandardScaler + median-gamma (`--rbf-gamma -1.0`)
+- Seeds via `--seed`, deterministic scikit-learn settings
+- All configs/metrics persisted per run
 
 ---
 
----
 ## Notes
-* This README reflects `outputs/creditcard_comparison_report/summary.csv`. Re-run `python scripts/run_creditcard_experiments.py` to refresh.
-* Message: ADV-soft aligns selection to PR-AUC and often improves PR-AUC/F1-Macro; effects can be dataset- and generator-dependent.
+- This README reflects `outputs/*_comparison_report/summary.csv` where available. Re-run the experiment scripts to regenerate.
+- The ADV add-on often improves PR-AUC or F1-Macro, but gains are dataset- and generator-dependent.
 
 ---
 
@@ -294,11 +292,11 @@ MIT
 If you use this code in your research, please cite:
 
 ```bibtex
-@misc{smoteadv2024,
-  title={SMOTE-ADV: Generator-agnostic Adversarial Filtering for Imbalanced Classification},
+@misc{rubric2025,
+  title={RUBRIC: A Unified Benchmark and Adversarial Filtering Toolkit for Imbalanced Classification},
   author={Yanxuan Yu and Dong Liu},
-  year={2024},
-  url={https://github.com/zorinayu/SMOTE-Adv}
+  year={2025},
+  url={https://github.com/zorinayu/RUBRIC}
 }
 ```
 
