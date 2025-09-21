@@ -178,7 +178,7 @@ try:
 except Exception:
     _HAS_XGB = False
 
-def adversarial_filter_synthetic(
+def rubric_filter_synthetic(
     X_real_min,
     X_synth_min,
     keep_top_frac=0.7,
@@ -270,7 +270,7 @@ def adversarial_filter_synthetic(
         return_times['filter_select_s'] = float(max(0.0, time.time() - t0 - t_lr - t_knn))
         return_times['filter_total_s'] = float(time.time() - t0)
 
-    print(f"   Kept {len(keep_idx)}/{len(X_synth_min)} synthetic samples after SMOTE-ADV filtering")
+    print(f"   Kept {len(keep_idx)}/{len(X_synth_min)} synthetic samples after RUBRIC filtering")
     return X_synth_min[keep_idx]
 
 # -------------------- PR-AUC-aligned ADV selection (soft/hard) --------------------
@@ -360,7 +360,7 @@ def _decile_bins(values: np.ndarray, n_bins: int = 10):
     bins = np.digitize(values, qs[1:-1], right=True)
     return bins, len(qs) - 1
 
-def adv_select_synthetics(
+def rubric_select_synthetics(
     X_train: np.ndarray,
     y_train: np.ndarray,
     X_min_real: np.ndarray,
@@ -369,25 +369,27 @@ def adv_select_synthetics(
     rng=np.random,
 ):
     disc = _train_calibrated_discriminator(
-        X_min_real, X_min_synth, C=args.adv_C if hasattr(args, "adv_C") else 2.0
+        X_min_real, X_min_synth, C=getattr(args, 'rubric_C', getattr(args, 'adv_C', 2.0))
     )
     R = disc.predict_proba(X_min_synth)[:, 1]
 
     X_tr, X_val, y_tr, y_val = train_test_split(
-        X_train, y_train, test_size=getattr(args, 'adv_val_frac', 0.2), stratify=y_train, random_state=42
+        X_train, y_train, test_size=getattr(args, 'rubric_val_frac', getattr(args, 'adv_val_frac', 0.2)), stratify=y_train, random_state=42
     )
     boundary = _fit_boundary_model_for_utility(X_tr, y_tr)
-    U = _utility_score(boundary, X_min_synth, norm=getattr(args, 'adv_norm', 'rank'))
+    U = _utility_score(boundary, X_min_synth, norm=getattr(args, 'rubric_norm', getattr(args, 'adv_norm', 'rank')))
 
-    dens_real = _knn_density(X_min_real, k=getattr(args, 'adv_density_k', 11))
+    dens_real = _knn_density(X_min_real, k=getattr(args, 'rubric_density_k', getattr(args, 'adv_density_k', 11)))
     nn = NearestNeighbors(n_neighbors=1).fit(X_min_real)
     _, idx = nn.kneighbors(X_min_synth, n_neighbors=1)
     D = dens_real[idx[:, 0]]
 
-    w_density_final = args.w_density2 if getattr(args, 'w_density2', None) is not None else getattr(args, 'w_density', 0.3)
-    Rn = _normalize(R, getattr(args, 'adv_norm', 'rank'))
-    Un = _normalize(U, getattr(args, 'adv_norm', 'rank'))
-    Dn = _normalize(D, getattr(args, 'adv_norm', 'rank'))
+    w_density_final = getattr(args, 'w_density2', None)
+    if w_density_final is None:
+        w_density_final = getattr(args, 'w_density', 0.3)
+    Rn = _normalize(R, getattr(args, 'rubric_norm', getattr(args, 'adv_norm', 'rank')))
+    Un = _normalize(U, getattr(args, 'rubric_norm', getattr(args, 'adv_norm', 'rank')))
+    Dn = _normalize(D, getattr(args, 'rubric_norm', getattr(args, 'adv_norm', 'rank')))
 
     alpha = getattr(args, 'w_realism', 0.4)
     beta = getattr(args, 'w_utility', 0.4)
@@ -395,15 +397,15 @@ def adv_select_synthetics(
     S = alpha * Rn + beta * Un + gamma * Dn
 
     dec, _ = _decile_bins(Dn, n_bins=10)
-    keep_floor = getattr(args, 'adv_min_keep_per_decile', 5)
+    keep_floor = getattr(args, 'rubric_min_keep_per_decile', getattr(args, 'adv_min_keep_per_decile', 5))
 
-    if getattr(args, 'adv_mode', 'soft') == 'soft':
+    if getattr(args, 'rubric_mode', getattr(args, 'adv_mode', 'soft')) == 'soft':
         w = _normalize(S, getattr(args, 'adv_norm', 'rank'))
         temps = [0.5, 1.0, 2.0]
         best_ap, best_w = -1.0, w
         for t in temps:
             wt = np.power(w, 1.0 / t)
-            ap = _proxy_pr_auc(X_tr, y_tr, X_val, y_val, sample_weight=None, proxy_name=getattr(args, 'adv_proxy', 'logreg'))
+            ap = _proxy_pr_auc(X_tr, y_tr, X_val, y_val, sample_weight=None, proxy_name=getattr(args, 'rubric_proxy', getattr(args, 'adv_proxy', 'logreg')))
             if ap > best_ap:
                 best_ap, best_w = ap, wt
         w_final = best_w.copy()
@@ -417,8 +419,8 @@ def adv_select_synthetics(
         return w_final
 
     # hard mode
-    if getattr(args, 'adv_thresh_mode', 'val-pr-auc') == 'quantile':
-        q = float(getattr(args, 'adv_keep_quantile', 0.6))
+    if getattr(args, 'rubric_thresh_mode', getattr(args, 'adv_thresh_mode', 'val-pr-auc')) == 'quantile':
+        q = float(getattr(args, 'rubric_keep_quantile', getattr(args, 'adv_keep_quantile', 0.6)))
         thr = np.quantile(S, 1.0 - q)
         keep = S >= thr
     else:
@@ -433,7 +435,7 @@ def adv_select_synthetics(
                 if len(m_b) < keep_floor and len(idx_b) > 0:
                     topk = np.argsort(S[idx_b])[::-1][:min(keep_floor, len(idx_b))]
                     mask[idx_b[topk]] = True
-                max_cap = getattr(args, 'adv_max_keep_per_decile', 1000000)
+                max_cap = getattr(args, 'rubric_max_keep_per_decile', getattr(args, 'adv_max_keep_per_decile', 1000000))
                 if mask[idx_b].sum() > max_cap:
                     topk = np.argsort(S[idx_b])[::-1][:max_cap]
                     tmp = np.zeros_like(mask[idx_b], dtype=bool)
@@ -441,14 +443,14 @@ def adv_select_synthetics(
                     mask[idx_b] = tmp
             X_aug = np.vstack([X_tr, X_min_synth[mask]])
             y_aug = np.hstack([y_tr, np.ones(mask.sum(), dtype=int)])
-            ap = _proxy_pr_auc(X_aug, y_aug, X_val, y_val, sample_weight=None, proxy_name=getattr(args, 'adv_proxy', 'logreg'))
+            ap = _proxy_pr_auc(X_aug, y_aug, X_val, y_val, sample_weight=None, proxy_name=getattr(args, 'rubric_proxy', getattr(args, 'adv_proxy', 'logreg')))
             if ap > best_ap:
                 best_ap, best_keep = ap, mask
         keep = best_keep
 
     return keep.astype(bool)
 
-def smote_then_adversarial_filter(
+def smote_then_rubric_filter(
     X,
     y,
     random_state=42,
@@ -483,7 +485,7 @@ def smote_then_adversarial_filter(
         Tuple of (augmented_X, augmented_y)
     """
     start_time = time.time()
-    print("   Starting SMOTE-Adv...")
+    print("   Starting RUBRIC filtering...")
     
     # Step 1: Generate SMOTE samples
     t0 = time.time()
@@ -501,7 +503,7 @@ def smote_then_adversarial_filter(
     X_synth_min = X_tail[y_tail == minority_label]
     
     # Step 3: Apply adversarial filtering
-    X_synth_keep = adversarial_filter_synthetic(
+    X_synth_keep = rubric_filter_synthetic(
         X_real_min,
         X_synth_min,
         keep_top_frac=keep_top_frac,
@@ -527,14 +529,14 @@ def smote_then_adversarial_filter(
     elapsed_time = time.time() - start_time
     if return_times is not None:
         return_times['smote_generate_s'] = float(t_smote)
-        return_times['adv_total_s'] = float(elapsed_time)
-    print(f"   SMOTE-ADV completed in {elapsed_time:.2f}s")
+        return_times['rubric_total_s'] = float(elapsed_time)
+    print(f"   RUBRIC filtering completed in {elapsed_time:.2f}s")
     print(f"   Final class distribution: majority={np.sum(y_new==0)}, minority={np.sum(y_new==1)}")
     
     return X_new, y_new
 
-def analyze_smote_adv_performance(X_original, y_original, X_smote_adv, y_smote_adv, 
-                                 X_smote, y_smote):
+def analyze_rubric_performance(X_original, y_original, X_rubric, y_rubric, 
+                               X_smote, y_smote):
     """
     Analyze SMOTE-Adv performance compared to original SMOTE.
     
@@ -547,19 +549,19 @@ def analyze_smote_adv_performance(X_original, y_original, X_smote_adv, y_smote_a
         y_smote: Standard SMOTE augmented labels
     """
     print("\n" + "="*60)
-    print("SMOTE-Adv Performance Analysis Report")
+    print("RUBRIC Performance Analysis Report")
     print("="*60)
     
     # Data distribution analysis
     print("\nData Distribution Comparison:")
     print(f"   Original: majority={np.sum(y_original==0)}, minority={np.sum(y_original==1)}")
     print(f"   After SMOTE: majority={np.sum(y_smote==0)}, minority={np.sum(y_smote==1)}")
-    print(f"   After SMOTE-Adv: majority={np.sum(y_smote_adv==0)}, minority={np.sum(y_smote_adv==1)}")
+    print(f"   After RUBRIC: majority={np.sum(y_rubric==0)}, minority={np.sum(y_rubric==1)}")
     
     # Filtering effect analysis
     original_minority = np.sum(y_original == 1)
     smote_minority = np.sum(y_smote == 1)
-    smote_adv_minority = np.sum(y_smote_adv == 1)
+    smote_adv_minority = np.sum(y_rubric == 1)
     
     smote_generated = smote_minority - original_minority
     smote_adv_generated = smote_adv_minority - original_minority
@@ -567,18 +569,18 @@ def analyze_smote_adv_performance(X_original, y_original, X_smote_adv, y_smote_a
     
     print(f"\nFiltering Effect:")
     print(f"   SMOTE generated: {smote_generated}")
-    print(f"   SMOTE-Adv kept: {smote_adv_generated}")
+    print(f"   RUBRIC kept: {smote_adv_generated}")
     print(f"   Filtering ratio: {(1-filtering_ratio)*100:.1f}%")
     
     # Class balance evaluation
     balance_ratio_original = np.sum(y_original == 1) / np.sum(y_original == 0)
     balance_ratio_smote = np.sum(y_smote == 1) / np.sum(y_smote == 0)
-    balance_ratio_smote_adv = np.sum(y_smote_adv == 1) / np.sum(y_smote_adv == 0)
+    balance_ratio_smote_adv = np.sum(y_rubric == 1) / np.sum(y_rubric == 0)
     
     print(f"\nClass Balance Ratios:")
     print(f"   Original minority ratio: {balance_ratio_original*100:.3f}%")
     print(f"   After SMOTE: {balance_ratio_smote*100:.3f}%")
-    print(f"   After SMOTE-Adv: {balance_ratio_smote_adv*100:.3f}%")
+    print(f"   After RUBRIC: {balance_ratio_smote_adv*100:.3f}%")
     
     print("\n" + "="*60)
     print("Analysis Complete")
@@ -588,7 +590,7 @@ def analyze_smote_adv_performance(X_original, y_original, X_smote_adv, y_smote_a
 def quick_smoke_test(X, y, rng=42):
     """
     Train/val/test split once, run 4 conditions quickly:
-    None, SMOTE, SMOTE+ADV(hard), SMOTE+ADV(soft)
+    None, SMOTE, SMOTE+RUBRIC(hard), SMOTE+RUBRIC(soft)
     Print PR-AUC deltas to sanity-check selection logic quickly.
     """
     from sklearn.model_selection import train_test_split as _tts
@@ -611,31 +613,31 @@ def quick_smoke_test(X, y, rng=42):
 
     class _Args: pass
     args = _Args()
-    args.adv_C = 2.0
+    args.rubric_C = 2.0
     args.w_density = 0.2
     args.w_density2 = None
     args.w_realism = 0.4
     args.w_utility = 0.4
-    args.adv_density_k = 11
-    args.adv_norm = "rank"
-    args.adv_proxy = "logreg"
-    args.adv_val_frac = 0.2
-    args.adv_min_keep_per_decile = 5
-    args.adv_max_keep_per_decile = 10**9
-    args.adv_mode = "hard"
-    args.adv_thresh_mode = "val-pr-auc"
-    args.adv_keep_quantile = 0.6
+    args.rubric_density_k = 11
+    args.rubric_norm = "rank"
+    args.rubric_proxy = "logreg"
+    args.rubric_val_frac = 0.2
+    args.rubric_min_keep_per_decile = 5
+    args.rubric_max_keep_per_decile = 10**9
+    args.rubric_mode = "hard"
+    args.rubric_thresh_mode = "val-pr-auc"
+    args.rubric_keep_quantile = 0.6
 
-    keep = adv_select_synthetics(X_tr, y_tr, X_min_real, X_min_synth, args)
+    keep = rubric_select_synthetics(X_tr, y_tr, X_min_real, X_min_synth, args)
     X_aug_h = np.vstack([X_tr, X_min_synth[keep]])
     y_aug_h = np.hstack([y_tr, np.ones(keep.sum(), dtype=int)])
     ap_hard = average_precision_score(y_te, _proxy_model("logreg", rng).fit(X_aug_h, y_aug_h).predict_proba(X_te)[:, 1])
 
-    args.adv_mode = "soft"
-    w = adv_select_synthetics(X_tr, y_tr, X_min_real, X_min_synth, args)
+    args.rubric_mode = "soft"
+    w = rubric_select_synthetics(X_tr, y_tr, X_min_real, X_min_synth, args)
     X_aug_s = np.vstack([X_tr, X_min_synth])
     y_aug_s = np.hstack([y_tr, np.ones(len(X_min_synth), dtype=int)])
     sw = np.hstack([np.ones(len(X_tr)), 1.0 + 1.0 * w])
     ap_soft = average_precision_score(y_te, _proxy_model("logreg", rng).fit(X_aug_s, y_aug_s, sample_weight=sw).predict_proba(X_te)[:, 1])
 
-    print(f"[QuickSmoke] PR-AUC base={ap_base:.3f} | SMOTE={ap_sm:.3f} | ADV-hard={ap_hard:.3f} | ADV-soft={ap_soft:.3f}")
+    print(f"[QuickSmoke] PR-AUC base={ap_base:.3f} | SMOTE={ap_sm:.3f} | RUBRIC-hard={ap_hard:.3f} | RUBRIC-soft={ap_soft:.3f}")

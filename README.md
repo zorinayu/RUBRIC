@@ -1,11 +1,11 @@
-# RUBRIC: A Unified Benchmark and Adversarial Filtering Toolkit for Imbalanced Classification
+# RUBRIC: A Unified Benchmark and Filtering Toolkit for Imbalanced Classification
 
 ## What is RUBRIC?
 
 RUBRIC is a standardized, extensible benchmark and reference implementation for imbalanced classification. It provides:
 
 - A unified training/evaluation pipeline and fair baselines
-- A generator-agnostic adversarial filtering add-on (ADV) that works with many oversamplers
+- A generator-agnostic filtering add-on (RUBRIC) that works with many oversamplers
 - Reproducible experiments, consistent metrics (ROC-AUC, PR-AUC, F1-Macro), and comparison reports
 
 ## Overview
@@ -14,7 +14,7 @@ This repository provides a compact, reproducible pipeline for imbalanced classif
 
 1. Up-dimension via RBF feature mapping (Random Fourier Features)
 2. Linear SVM classifier with class weighting
-3. ADV add-on: adversarial filtering using a logistic regression discriminator
+3. RUBRIC add-on: filtering using a logistic regression discriminator
 4. Multi-dataset support: Credit Card Fraud, NSL-KDD
 5. Optional 2D visualization (UMAP/PCA)
 6. Baselines: SMOTE, ADASYN, Borderline-SMOTE, SVM-SMOTE (via imbalanced-learn)
@@ -55,15 +55,15 @@ python src/train.py --dataset creditcard --augment adasyn --target-ratio 0.3 --r
 python src/train.py --dataset creditcard --augment borderline-smote --target-ratio 0.3 --rbf-gamma -1.0 --seed 42
 python src/train.py --dataset creditcard --augment svm-smote --target-ratio 0.3 --rbf-gamma -1.0 --seed 42
 
-# ADV add-on (generator-agnostic). Example 1: SMOTE + ADV
+# RUBRIC add-on (generator-agnostic). Example 1: SMOTE + RUBRIC
 python src/train.py --dataset creditcard --augment adv --gen-kind smote --target-ratio 0.3 \
   --keep-frac 0.65 --adv-C 1.0 --rbf-gamma -1.0 --seed 42
 
-# Example 2: Borderline-SMOTE + ADV
+# Example 2: Borderline-SMOTE + RUBRIC
 python src/train.py --dataset creditcard --augment adv --gen-kind borderline --target-ratio 0.3 \
   --keep-frac 0.65 --adv-C 1.0 --rbf-gamma -1.0 --seed 42
 
-# Example 3: SVM-SMOTE + ADV
+# Example 3: SVM-SMOTE + RUBRIC
 python src/train.py --dataset creditcard --augment adv --gen-kind svm --target-ratio 0.3 \
   --keep-frac 0.65 --adv-C 1.0 --rbf-gamma -1.0 --seed 42
 
@@ -136,7 +136,7 @@ RUBRIC/
 │   ├── train.py
 │   ├── data.py
 │   ├── preprocess.py
-│   ├── augment.py            # ADV add-on implementation
+│   ├── augment.py            # RUBRIC implementation
 │   ├── evaluate.py
 │   └── models/
 │       └── svm_rff.py
@@ -148,16 +148,16 @@ RUBRIC/
 
 ## Baselines and Sources
 
-We compare ADV-augmented methods against widely used baselines implemented in mature libraries:
+We compare RUBRIC-augmented methods against widely used baselines implemented in mature libraries:
 
 - SMOTE, Borderline-SMOTE, SVMSMOTE, ADASYN from `imbalanced-learn` ([GitHub](https://github.com/scikit-learn-contrib/imbalanced-learn), [Docs](https://imbalanced-learn.org/stable/over_sampling.html))
   Install: `pip install imbalanced-learn`
 
-## Adversarial Filtering (ADV) in RUBRIC
+## RUBRIC Filtering
 
 ### Algorithm Overview
 
-ADV enhances oversampling by adding an adversarial filtering step:
+RUBRIC enhances oversampling by adding a filtering step:
 
 1. Generate synthetic minority samples to a target ratio
 2. Train a discriminator (logistic regression) to separate real vs synthetic
@@ -166,7 +166,7 @@ ADV enhances oversampling by adding an adversarial filtering step:
 
 ### Generator-agnostic usage
 
-Apply ADV on top of different generators with a unified CLI:
+Apply RUBRIC on top of different generators with a unified CLI:
 
 ```bash
 # Pattern
@@ -183,15 +183,15 @@ python src/train.py --dataset creditcard --augment adv --gen-kind smote-enn --ta
 ```
 
 Notes:
-- ADV is the same across generators; only `--gen-kind` switches the underlying oversampler.
+- RUBRIC is the same across generators; only `--gen-kind` switches the underlying oversampler.
 - On balanced datasets, the training script auto-adjusts an effective target ratio slightly above the current class ratio to keep settings valid.
 
 ### Results (Credit Card Fraud, seed=42, RFF=300, median-gamma)
 
-Paired base vs +ADV (same underlying generator):
+Paired base vs RUBRIC (same underlying generator):
 
-| Generator | ROC-AUC (base) | PR-AUC (base) | F1-Macro (base) | ROC-AUC (+ADV) | PR-AUC (+ADV) | F1-Macro (+ADV) | ΔPR-AUC | ΔF1-Macro |
-|-----------|-----------------|---------------|------------------|----------------|---------------|------------------|---------|-----------|
+| Generator | ROC-AUC (base) | PR-AUC (base) | F1-Macro (base) | ROC-AUC (RUBRIC) | PR-AUC (RUBRIC) | F1-Macro (RUBRIC) | ΔPR-AUC | ΔF1-Macro |
+|-----------|-----------------|---------------|------------------|------------------|-----------------|-------------------|---------|-----------|
 | SMOTE | 0.958127 | 0.510969 | 0.549454 | 0.939537 | 0.483470 | 0.546874 | -0.027499 | -0.002580 |
 | Borderline-SMOTE | 0.943584 | 0.548030 | 0.667823 | 0.948718 | 0.559856 | 0.676186 | +0.011826 | +0.008363 |
 | SVM-SMOTE | 0.9609 | 0.6707 | 0.7024 | 0.9606 | 0.6685 | 0.6955 | -0.0022 | -0.0069 |
@@ -205,15 +205,15 @@ Absolute metrics (all methods in this run):
 | ADASYN | 0.911581 | 0.386259 | 0.978275 | 0.521606 |
 | Borderline-SMOTE | 0.943584 | 0.548030 | 0.996416 | 0.667823 |
 | SVM-SMOTE | 0.9609 | 0.6707 | 0.9969 | 0.7024 |
-| SMOTE + ADV | 0.939537 | 0.483470 | 0.987263 | 0.546874 |
-| Borderline + ADV | 0.948718 | 0.559856 | 0.996586 | 0.676186 |
-| SMOTE-Tomek + ADV | 0.858890 | 0.418473 | 0.989305 | 0.547409 |
-| SMOTE-ENN + ADV | 0.881601 | 0.433934 | 0.989316 | 0.553480 |
-| SVM-SMOTE + ADV | 0.9606 | 0.6685 | 0.9967 | 0.6955 |
+| SMOTE + RUBRIC | 0.939537 | 0.483470 | 0.987263 | 0.546874 |
+| Borderline + RUBRIC | 0.948718 | 0.559856 | 0.996586 | 0.676186 |
+| SMOTE-Tomek + RUBRIC | 0.858890 | 0.418473 | 0.989305 | 0.547409 |
+| SMOTE-ENN + RUBRIC | 0.881601 | 0.433934 | 0.989316 | 0.553480 |
+| SVM-SMOTE + RUBRIC | 0.9606 | 0.6685 | 0.9967 | 0.6955 |
 
 Figures:
 - Paired deltas per metric: `outputs/creditcard_comparison_report/paired_deltas.png`
-- Win-rate of +ADV over base (PR-AUC): `outputs/creditcard_comparison_report/win_rate.png`
+- Win-rate of RUBRIC over base (PR-AUC): `outputs/creditcard_comparison_report/win_rate.png`
 - Overview plots: `outputs/creditcard_comparison_report/creditcard_comparison_plots.png`
 
 Runtime (see `outputs/creditcard_comparison_report/summary.csv` for per-run and averages).
@@ -222,10 +222,10 @@ Runtime (see `outputs/creditcard_comparison_report/summary.csv` for per-run and 
 
 ### Results (NSL-KDD, seed=42, RFF=300, median-gamma)
 
-Paired base vs +ADV (same underlying generator):
+Paired base vs RUBRIC (same underlying generator):
 
-| Generator | ROC-AUC (base) | PR-AUC (base) | F1-Macro (base) | ROC-AUC (+ADV) | PR-AUC (+ADV) | F1-Macro (+ADV) | ΔPR-AUC | ΔF1-Macro |
-|-----------|-----------------|---------------|------------------|----------------|---------------|------------------|---------|-----------|
+| Generator | ROC-AUC (base) | PR-AUC (base) | F1-Macro (base) | ROC-AUC (RUBRIC) | PR-AUC (RUBRIC) | F1-Macro (RUBRIC) | ΔPR-AUC | ΔF1-Macro |
+|-----------|-----------------|---------------|------------------|------------------|-----------------|-------------------|---------|-----------|
 | SMOTE | 0.996364 | 0.996565 | 0.977206 | 0.996367 | 0.996557 | 0.977307 | -0.000008 | +0.000101 |
 | Borderline-SMOTE | 0.996617 | 0.996394 | 0.973883 | 0.996606 | 0.996598 | 0.974788 | +0.000204 | +0.000905 |
 | SVM-SMOTE | 0.996723 | 0.996045 | 0.976210 | 0.996587 | 0.996169 | 0.975260 | +0.000124 | -0.000950 |
@@ -241,15 +241,15 @@ Absolute metrics (all methods in this run):
 | ADASYN | 0.996746 | 0.996597 | 0.973813 | 0.973781 |
 | Borderline-SMOTE | 0.996617 | 0.996394 | 0.973914 | 0.973883 |
 | SVM-SMOTE | 0.996723 | 0.996045 | 0.976237 | 0.976210 |
-| SMOTE + ADV | 0.996367 | 0.996557 | 0.977341 | 0.977307 |
-| Borderline + ADV | 0.996606 | 0.996598 | 0.974821 | 0.974788 |
-| SMOTE-Tomek + ADV | 0.996376 | 0.996564 | 0.977207 | 0.977174 |
-| SMOTE-ENN + ADV | 0.996373 | 0.996546 | 0.977140 | 0.977106 |
-| SVM-SMOTE + ADV | 0.996587 | 0.996169 | 0.975292 | 0.975260 |
+| SMOTE + RUBRIC | 0.996367 | 0.996557 | 0.977341 | 0.977307 |
+| Borderline + RUBRIC | 0.996606 | 0.996598 | 0.974821 | 0.974788 |
+| SMOTE-Tomek + RUBRIC | 0.996376 | 0.996564 | 0.977207 | 0.977174 |
+| SMOTE-ENN + RUBRIC | 0.996373 | 0.996546 | 0.977140 | 0.977106 |
+| SVM-SMOTE + RUBRIC | 0.996587 | 0.996169 | 0.975292 | 0.975260 |
 
 Figures:
 - Paired deltas per metric: `outputs/nsl_kdd_comparison_report/paired_deltas.png`
-- Win-rate of +ADV over base (PR-AUC): `outputs/nsl_kdd_comparison_report/win_rate.png`
+- Win-rate of RUBRIC over base (PR-AUC): `outputs/nsl_kdd_comparison_report/win_rate.png`
 - Overview plots: `outputs/nsl_kdd_comparison_report/nsl_kdd_comparison_plots.png`
 
 ---
@@ -264,7 +264,7 @@ Figures:
 
 ## Notes
 - This README reflects `outputs/*_comparison_report/summary.csv` where available. Re-run the experiment scripts to regenerate.
-- The ADV add-on often improves PR-AUC or F1-Macro, but gains are dataset- and generator-dependent.
+- Effects can be dataset- and generator-dependent.
 
 ---
 
@@ -291,7 +291,7 @@ If you use this code in your research, please cite:
 
 ```bibtex
 @misc{rubric2025,
-  title={RUBRIC: A Unified Benchmark and Adversarial Filtering Toolkit for Imbalanced Classification},
+  title={RUBRIC: A Unified Benchmark and Filtering Toolkit for Imbalanced Classification},
   author={Yanxuan Yu and Dong Liu},
   year={2025},
   url={https://github.com/zorinayu/RUBRIC}

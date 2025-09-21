@@ -15,7 +15,7 @@ from data import load_creditcard_csv, load_nsl_kdd_data
 from preprocess import preprocess_df
 from augment import (
     smote_oversample,
-    smote_then_adversarial_filter,
+    smote_then_rubric_filter,
     adasyn_oversample,
     borderline_smote_oversample,
     svm_smote_oversample,
@@ -24,7 +24,7 @@ from augment import (
     smote_tomek_resample,
     smote_enn_resample,
     make_oversampler,
-    adv_select_synthetics,
+    rubric_select_synthetics,
 )
 from models.svm_rff import SVMWithRFF
 from evaluate import evaluate_and_plot
@@ -32,7 +32,7 @@ import time
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description='Imbalanced Classification with RBF features + SVM + (optional) adversarially-filtered SMOTE')
+    p = argparse.ArgumentParser(description='Imbalanced Classification with RBF features + SVM + (optional) RUBRIC filtering of synthetic samples')
     p.add_argument('--data', type=str, default='data/creditcard.csv')
     p.add_argument('--dataset', type=str, default='creditcard', choices=['creditcard', 'nsl_kdd'], help='Dataset type to use')
     p.add_argument('--test-size', type=float, default=0.2)
@@ -43,7 +43,7 @@ def parse_args():
     p.add_argument('--rbf-gamma', type=float, default=-1.0, help='RBF bandwidth; if <0 uses median heuristic')
     p.add_argument('--svm-C', type=float, default=1.0)
     p.add_argument('--no-plots', action='store_true', help='Disable plots (ROC/PR/UMAP/PCA)')
-    # SMOTE-Adv++ extras
+    # RUBRIC selection controls
     p.add_argument('--keep-top-frac', type=float, default=0.65)
     # alias for convenience
     p.add_argument('--keep-frac', type=float, default=None, help='Alias for --keep-top-frac')
@@ -55,17 +55,17 @@ def parse_args():
     p.add_argument('--w-majority', type=float, default=0.1)
     p.add_argument('--gate-frac', type=float, default=0.9)
     p.add_argument('--grid', action='store_true', help='Enable small grid over C, keep, w_density')
-    p.add_argument('--gen-kind', type=str, default='smote', choices=['smote','borderline','borderline2','svm','kmeans','smote-tomek','smote-enn','adasyn'], help='Underlying generator for ADV filter')
+    p.add_argument('--gen-kind', type=str, default='smote', choices=['smote','borderline','borderline2','svm','kmeans','smote-tomek','smote-enn','adasyn'], help='Underlying generator for RUBRIC filter')
     p.add_argument('--adapt-keep', action='store_true', help='Enable one-shot adaptive keep_top_frac fallback using recall@FPR=1% on a validation split')
-    # --- ADV selection improvements ---
+    # --- RUBRIC selection improvements ---
     p.add_argument('--adv-mode', type=str, default='soft', choices=['hard','soft'],
                    help='Hard = keep/drop; Soft = sample_weight from score.')
     p.add_argument('--w-utility', type=float, default=0.40,
-                   help='Weight of boundary utility score U for ADV selection.')
+                   help='Weight of boundary utility score U for selection.')
     p.add_argument('--w-density2', type=float, default=None,
                    help='Optional override for density weight; falls back to --w-density if None.')
     p.add_argument('--adv-density-k', type=int, default=11,
-                   help='k for kNN density on minority manifold (ADV).')
+                   help='k for kNN density on minority manifold.')
     p.add_argument('--adv-thresh-mode', type=str, default='val-pr-auc', choices=['val-pr-auc','quantile'],
                    help='Pick threshold by proxy PR-AUC on a validation split, or by a fixed quantile.')
     p.add_argument('--adv-keep-quantile', type=float, default=0.6,
@@ -75,11 +75,11 @@ def parse_args():
     p.add_argument('--adv-proxy', type=str, default='logreg', choices=['logreg','xgb'],
                    help='Quick proxy classifier used to choose threshold by PR-AUC.')
     p.add_argument('--adv-val-frac', type=float, default=0.2,
-                   help='Fraction of TRAIN to use as inner validation for threshold tuning (ADV).')
+                   help='Fraction of TRAIN to use as inner validation for threshold tuning.')
     p.add_argument('--adv-min-keep-per-decile', type=int, default=5,
-                   help='Safety floor: keep at least N points per density decile to preserve submodes (ADV).')
+                   help='Safety floor: keep at least N points per density decile to preserve submodes.')
     p.add_argument('--adv-max-keep-per-decile', type=int, default=1000000,
-                   help='Safety cap per density decile (ADV).')
+                   help='Safety cap per density decile.')
     return p.parse_args()
 
 
@@ -129,7 +129,7 @@ def main():
     plots_dir = output_dir / 'plots'
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    print("Starting Extreme Data Augmentation Training...")
+    print("Starting Training...")
     print(f"Output directory: {output_dir}")
     print(f"Configuration:")
     print(f"   - Dataset: {args.dataset}")
@@ -199,10 +199,9 @@ def main():
         aug_times['augment_total_s'] = float(time.time() - t0)
         print(f"   After SMOTE: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
     elif args.augment in ('adv','smote-adv'):
-        # New ADV selection: generate, then ADV soft/hard select by PR-AUC alignment
-        # Keep original copies for optional adapt_keep inner validation
+        # RUBRIC selection: generate, then keep/weight selected synthetic minority
         orig_X_tr, orig_y_tr = X_tr.copy(), y_tr.copy()
-        print(f"Applying {args.gen_kind.upper()} + ADV selection ({args.adv_mode})...")
+        print(f"Applying {args.gen_kind.upper()} + RUBRIC selection ({args.adv_mode})...")
         t0 = time.time()
         # Step 1: generate with chosen generator
         osr = make_oversampler(args.gen_kind, effective_ratio, args.seed, k_neighbors=5)
@@ -213,9 +212,9 @@ def main():
         X_tail, y_tail = X_res[n_orig:], y_res[n_orig:]
         X_min_synth = X_tail[y_tail == 1]
         X_min_real = X_tr[y_tr == 1]
-        # Step 3: ADV selection
+        # Step 3: RUBRIC selection
         t1 = time.time()
-        sel = adv_select_synthetics(
+        sel = rubric_select_synthetics(
             X_train=X_tr,
             y_train=y_tr,
             X_min_real=X_min_real,
@@ -239,10 +238,10 @@ def main():
             y_tr = np.hstack([y_tr, np.ones(int(keep_mask.sum()), dtype=int)])
             kept = int(keep_mask.sum())
         aug_times['smote_generate_s'] = float(gen_time)
-        aug_times['adv_select_s'] = float(sel_time)
+        aug_times['rubric_select_s'] = float(sel_time)
         aug_times['augment_total_s'] = float(time.time() - t0)
-        print(f"   ADV kept/weighted {kept}/{len(X_min_synth)} synthetic samples")
-        print(f"   After {args.gen_kind}+ADV: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
+        print(f"   RUBRIC kept/weighted {kept}/{len(X_min_synth)} synthetic samples")
+        print(f"   After {args.gen_kind}+RUBRIC: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
 
         # Optional: one-shot adaptive keep fallback based on Recall@FPR=1%
         if args.adapt_keep:
@@ -253,7 +252,7 @@ def main():
             # Base augmentation on inner train
             osr = make_oversampler(args.gen_kind, effective_ratio, args.seed, k_neighbors=5)
             Xb, yb = osr.fit_resample(X_tr_in, y_tr_in)
-            # Adv augmentation on inner train
+            # RUBRIC on inner train
             Xa, ya = generate_then_filter(
                 X_tr_in, y_tr_in,
                 generator=args.gen_kind,
@@ -286,7 +285,7 @@ def main():
 
             rb = _recall_at_fpr(y_val_in, sb, 0.01)
             ra = _recall_at_fpr(y_val_in, sa, 0.01)
-            print(f"      base Recall@1%={rb:.4f}, +ADV Recall@1%={ra:.4f}")
+            print(f"      base Recall@1%={rb:.4f}, RUBRIC Recall@1%={ra:.4f}")
             if ra + 1e-6 < rb:
                 # Reduce keep_top_frac once and regenerate on full train
                 old_keep = args.keep_top_frac
@@ -352,7 +351,7 @@ def main():
     # Optional small grid over C, keep, w_density
     best = None
     if args.grid and args.augment in ('adv','smote-adv'):
-        print("Running small grid search for ADV...")
+        print("Running small grid search for RUBRIC...")
         Cs = [1.0, 2.0, 5.0]
         keeps = [0.6, 0.65, 0.7]
         wds = [0.2, 0.3, 0.4]
@@ -361,7 +360,7 @@ def main():
             for keep in keeps:
                 for wd in wds:
                     tgrid = {}
-                    Xg, yg = smote_then_adversarial_filter(
+                    Xg, yg = smote_then_rubric_filter(
                         X_tr, y_tr,
                         random_state=args.seed,
                         ratio=args.target_ratio,
@@ -390,9 +389,9 @@ def main():
             args.keep_top_frac = best['keep_top_frac']
             args.adv_C = best['adv_C']
             args.w_density = best['w_density']
-            print(f"Grid best: keep={args.keep_top_frac}, adv_C={args.adv_C}, w_density={args.w_density}")
+            print(f"Grid best: keep={args.keep_top_frac}, C={args.adv_C}, w_density={args.w_density}")
             # Re-run augmentation with best params
-            X_tr, y_tr = smote_then_adversarial_filter(
+            X_tr, y_tr = smote_then_rubric_filter(
                 X_tr, y_tr,
                 random_state=args.seed,
                 ratio=args.target_ratio,
@@ -445,25 +444,25 @@ def main():
             'train_s': float(t_train),
             'inference_s': float(t_inf),
         },
-        'adv_params': {
+        'rubric_params': {
             'gen_kind': args.gen_kind,
             'keep_top_frac': args.keep_top_frac,
-            'adv_C': args.adv_C,
+            'C': args.adv_C,
             'k_density': args.k_density,
             'k_majority': args.k_majority,
             'weights': [args.w_realism, args.w_density, args.w_majority],
             'gate_frac': args.gate_frac,
-            'adv_mode': args.adv_mode,
+            'mode': args.adv_mode,
             'w_utility': args.w_utility,
             'w_density2': args.w_density2,
-            'adv_density_k': args.adv_density_k,
-            'adv_thresh_mode': args.adv_thresh_mode,
-            'adv_keep_quantile': args.adv_keep_quantile,
-            'adv_norm': args.adv_norm,
-            'adv_proxy': args.adv_proxy,
-            'adv_val_frac': args.adv_val_frac,
-            'adv_min_keep_per_decile': args.adv_min_keep_per_decile,
-            'adv_max_keep_per_decile': args.adv_max_keep_per_decile,
+            'density_k': args.adv_density_k,
+            'thresh_mode': args.adv_thresh_mode,
+            'keep_quantile': args.adv_keep_quantile,
+            'norm': args.adv_norm,
+            'proxy': args.adv_proxy,
+            'val_frac': args.adv_val_frac,
+            'min_keep_per_decile': args.adv_min_keep_per_decile,
+            'max_keep_per_decile': args.adv_max_keep_per_decile,
         } if args.augment in ('adv','smote-adv') else None,
     }
 
@@ -480,7 +479,7 @@ def main():
 
     if metrics['pr_auc'] < 0.01:
         print("WARNING: Very low PR-AUC indicates poor minority class detection!")
-        print("Suggestion: Try data augmentation methods (SMOTE, ADV)")
+        print("Suggestion: Try data augmentation methods (SMOTE, RUBRIC)")
     elif metrics['pr_auc'] < 0.1:
         print("WARNING: Low PR-AUC - consider tuning hyperparameters or trying different augmentation")
     else:
