@@ -37,7 +37,7 @@ def parse_args():
     p.add_argument('--dataset', type=str, default='creditcard', choices=['creditcard', 'nsl_kdd'], help='Dataset type to use')
     p.add_argument('--test-size', type=float, default=0.2)
     p.add_argument('--seed', type=int, default=42)
-    p.add_argument('--augment', type=str, default='smote-adv', choices=['none','smote','smote-adv','adasyn','borderline-smote','svm-smote','kmeans-smote','smote-tomek','smote-enn'])
+    p.add_argument('--augment', type=str, default='adv', choices=['none','smote','adv','smote-adv','adasyn','borderline-smote','svm-smote','kmeans-smote','smote-tomek','smote-enn'])
     p.add_argument('--target-ratio', type=float, default=0.3, help='Minority:Majority balancing target (e.g., 0.3 -> 3:10)')
     p.add_argument('--rbf-components', type=int, default=300)
     p.add_argument('--rbf-gamma', type=float, default=-1.0, help='RBF bandwidth; if <0 uses median heuristic')
@@ -55,7 +55,7 @@ def parse_args():
     p.add_argument('--w-majority', type=float, default=0.1)
     p.add_argument('--gate-frac', type=float, default=0.9)
     p.add_argument('--grid', action='store_true', help='Enable small grid over C, keep, w_density')
-    p.add_argument('--gen-kind', type=str, default='smote', choices=['smote','borderline','borderline2','svm','kmeans','smote-tomek','smote-enn','adasyn'], help='Underlying generator for SMOTE-ADV filter')
+    p.add_argument('--gen-kind', type=str, default='smote', choices=['smote','borderline','borderline2','svm','kmeans','smote-tomek','smote-enn','adasyn'], help='Underlying generator for ADV filter')
     p.add_argument('--adapt-keep', action='store_true', help='Enable one-shot adaptive keep_top_frac fallback using recall@FPR=1% on a validation split')
     # --- ADV selection improvements ---
     p.add_argument('--adv-mode', type=str, default='soft', choices=['hard','soft'],
@@ -89,7 +89,7 @@ def create_output_dir(args):
     dir_parts = []
     dir_parts.append(args.dataset)
     dir_parts.append(f"aug_{args.augment}")
-    if args.augment == 'smote-adv':
+    if args.augment in ('adv','smote-adv'):
         dir_parts.append(f"gen_{args.gen_kind}")
     dir_parts.append(f"rff_{args.rbf_components}")
     dir_parts.append(f"gamma_{args.rbf_gamma}")
@@ -198,7 +198,7 @@ def main():
         X_tr, y_tr = smote_oversample(X_tr, y_tr, random_state=args.seed, ratio=effective_ratio)
         aug_times['augment_total_s'] = float(time.time() - t0)
         print(f"   After SMOTE: {len(X_tr)} samples (minority ratio: {np.mean(y_tr):.4f})")
-    elif args.augment == 'smote-adv':
+    elif args.augment in ('adv','smote-adv'):
         # New ADV selection: generate, then ADV soft/hard select by PR-AUC alignment
         # Keep original copies for optional adapt_keep inner validation
         orig_X_tr, orig_y_tr = X_tr.copy(), y_tr.copy()
@@ -351,8 +351,8 @@ def main():
 
     # Optional small grid over C, keep, w_density
     best = None
-    if args.grid and args.augment == 'smote-adv':
-        print("Running small grid search for SMOTE-Adv++...")
+    if args.grid and args.augment in ('adv','smote-adv'):
+        print("Running small grid search for ADV...")
         Cs = [1.0, 2.0, 5.0]
         keeps = [0.6, 0.65, 0.7]
         wds = [0.2, 0.3, 0.4]
@@ -464,7 +464,7 @@ def main():
             'adv_val_frac': args.adv_val_frac,
             'adv_min_keep_per_decile': args.adv_min_keep_per_decile,
             'adv_max_keep_per_decile': args.adv_max_keep_per_decile,
-        } if args.augment == 'smote-adv' else None,
+        } if args.augment in ('adv','smote-adv') else None,
     }
 
     with open(output_dir / 'config.json', 'w') as f:
@@ -480,7 +480,7 @@ def main():
 
     if metrics['pr_auc'] < 0.01:
         print("WARNING: Very low PR-AUC indicates poor minority class detection!")
-        print("Suggestion: Try data augmentation methods (SMOTE, SMOTE-Adv)")
+        print("Suggestion: Try data augmentation methods (SMOTE, ADV)")
     elif metrics['pr_auc'] < 0.1:
         print("WARNING: Low PR-AUC - consider tuning hyperparameters or trying different augmentation")
     else:
