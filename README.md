@@ -22,6 +22,7 @@ This repository provides a compact, reproducible pipeline for imbalanced classif
 Supported datasets:
 - Credit Card Fraud Detection (284,807 transactions; fraud ≈ 0.172%) — extreme imbalance
 - NSL-KDD Network Intrusion Detection (148,517 connections; attacks ≈ 48.12%) — roughly balanced
+- IEEE-CIS Fraud Detection (Kaggle) — large-scale e-commerce transactions; label `isFraud`
 
 ---
 
@@ -37,12 +38,18 @@ pip install -r requirements.txt
 ### 1) Download Data (one-time)
 
 Credit Card Fraud dataset:
-- Visit the dataset page: https://www.kaggle.com/mlg-ulb/creditcardfraud
+- Visit the dataset page: [Kaggle page](https://www.kaggle.com/mlg-ulb/creditcardfraud)
 - Download `creditcard.csv` to `data/creditcard.csv`.
 
 NSL-KDD dataset:
-- Visit the dataset page: https://www.kaggle.com/datasets/hassan06/nslkdd
+- Visit the dataset page: [Kaggle page](https://www.kaggle.com/datasets/hassan06/nslkdd)
 - Place files under `data/NSL-KDD dataset/` (e.g., `KDDTrain+.txt`, `KDDTest+.txt`).
+
+IEEE-CIS Fraud Detection (Kaggle):
+- Competition page: [Kaggle competition](https://www.kaggle.com/competitions/ieee-fraud-detection/overview)
+- Create folder: `data/ieee-fraud-detection/`
+- Download `train_transaction.csv` (required) and `train_identity.csv` (optional) into that folder
+- Note: Our baseline runner uses numeric features; categorical handling can be added later
 
 ### 2) Train + Evaluate
 
@@ -109,12 +116,18 @@ NSL-KDD experiments are optional:
 python scripts/run_nsl_kdd_experiments.py
 ```
 
+IEEE-CIS Fraud Detection:
+```bash
+python scripts/run_ieee_experiments.py
+```
+
 ### 5) Outputs
 
 - Metrics per run: `outputs/<run_name>/metrics.json`
 - Plots: ROC/PR curves in `outputs/<run_name>/plots/`
 - Augmented datasets: `data/augmented/*_augmentation_*.csv`
 - Comparison reports: `outputs/*_comparison_report/`
+- IEEE augmentation comparison doc: `data/ieee-fraud-detection/augmentation_comparison.txt`
 
 ---
 

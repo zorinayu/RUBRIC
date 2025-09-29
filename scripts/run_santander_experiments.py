@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Credit Card Fraud Detection Experiment Runner
-Runs baseline experiments for Credit Card fraud detection dataset
+Santander Customer Transaction Prediction Experiment Runner
+Runs baseline experiments for Santander Customer Transaction Prediction dataset
 """
 
 import subprocess
@@ -35,7 +35,7 @@ def run_experiment(cmd, description):
         return False
 
 def collect_results():
-    """Collect results from all Credit Card experiment directories"""
+    """Collect results from all Santander experiment directories"""
     results = []
     outputs_dir = Path('outputs')
     
@@ -44,7 +44,7 @@ def collect_results():
         return results
     
     for exp_dir in outputs_dir.iterdir():
-        if exp_dir.is_dir() and exp_dir.name.startswith('creditcard_'):
+        if exp_dir.is_dir() and exp_dir.name.startswith('santander_'):
             config_file = exp_dir / 'config.json'
             metrics_file = exp_dir / 'metrics.json'
             
@@ -67,7 +67,7 @@ def collect_results():
     return results
 
 def create_comparison_report(results):
-    """Create a comprehensive comparison report for Credit Card experiments"""
+    """Create a comprehensive comparison report for Santander experiments"""
     if not results:
         print("No results to compare")
         return
@@ -76,7 +76,7 @@ def create_comparison_report(results):
     df = pd.DataFrame(results)
     
     # Create comparison report
-    report_dir = Path('outputs/creditcard_comparison_report')
+    report_dir = Path('outputs/santander_comparison_report')
     report_dir.mkdir(parents=True, exist_ok=True)
     
     # Save detailed results
@@ -132,7 +132,7 @@ def create_comparison_report(results):
     
     # Print summary
     print(f"\n{'='*80}")
-    print("CREDIT CARD FRAUD DETECTION EXPERIMENT COMPARISON SUMMARY")
+    print("SANTANDER CUSTOMER TRANSACTION PREDICTION EXPERIMENT COMPARISON SUMMARY")
     print(f"{'='*80}")
     print(f"Total experiments: {len(df)}")
     print(f"Report saved to: {report_dir}")
@@ -187,10 +187,10 @@ def _bootstrap_ci(x, n_boot=1000, alpha=0.05, seed=42):
 
 
 def create_comparison_plots(df, report_dir):
-    """Create comparison plots for Credit Card experiments (polished layout + paired deltas)."""
+    """Create comparison plots for Santander experiments (polished layout + paired deltas)."""
     plt.style.use('seaborn-whitegrid')
     fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-    fig.suptitle('Credit Card Fraud Detection Experiment Comparison Results', fontsize=18, fontweight='bold')
+    fig.suptitle('Santander Customer Transaction Prediction Experiment Comparison Results', fontsize=18, fontweight='bold')
 
     # PR-AUC by augmentation method
     ax1 = axes[0, 0]
@@ -305,10 +305,10 @@ def create_comparison_plots(df, report_dir):
             plt.close()
 
     plt.tight_layout()
-    plt.savefig(report_dir / 'creditcard_comparison_plots.png', dpi=300, bbox_inches='tight')
+    plt.savefig(report_dir / 'santander_comparison_plots.png', dpi=300, bbox_inches='tight')
     plt.close()
 
-    print(f"Comparison plots saved to: {report_dir / 'creditcard_comparison_plots.png'}")
+    print(f"Comparison plots saved to: {report_dir / 'santander_comparison_plots.png'}")
 
 
 def _paired_rows(df, metric):
@@ -395,13 +395,13 @@ def compute_and_save_delta_stats(df, report_dir):
             print("  ".join(msg))
 
 def main():
-    """Main Credit Card experiment runner"""
-    print("Credit Card Fraud Detection - Experiment Runner")
+    """Main Santander experiment runner"""
+    print("Santander Customer Transaction Prediction - Experiment Runner")
     print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     # Define multi-seed runs
     seeds = [13, 21, 34, 42, 87]
-    base = 'python src/train.py --dataset creditcard --rbf-components 300 --rbf-gamma -1.0 --test-size 0.2'
+    base = 'python src/train.py --dataset santander --rbf-components 300 --rbf-gamma -1.0 --test-size 0.2'
     experiments = []
     for sd in seeds:
         prefix = f"{base} --seed {sd}"
@@ -485,16 +485,21 @@ def _ensure_src_on_path():
     if src_dir not in _sys.path:
         _sys.path.append(src_dir)
 
-def _load_credit_card_data():
+def _load_santander_data():
     import numpy as _np
     import pandas as _pd
-    data_path = _Path('data') / 'creditcard.csv'
+    data_path = _Path('data') / 'santander-customer-transaction-prediction' / 'train.csv'
     if not data_path.exists():
         print(f"Error: {data_path} not found!")
         return None, None, None
+    print("Loading Santander data...")
     df = _pd.read_csv(data_path)
-    X = df.drop('Class', axis=1).values
-    y = df['Class'].values
+    print(f"Data loaded: {df.shape}")
+    
+    # Extract features and target
+    feature_cols = [col for col in df.columns if col.startswith('var_')]
+    X = df[feature_cols].values
+    y = df['target'].values
     return X, y, df
 
 def _apply_augmentation(X, y, method: str):
@@ -534,8 +539,14 @@ def _apply_augmentation(X, y, method: str):
         return smote_tomek_resample(X, y, random_state=42, ratio=1.0)
     if method in ('smote_enn', 'enn'):
         print('   Applying SMOTE-ENN...')
-        return smote_enn_resample(X, y, random_state=42, ratio=1.0)
-    if method in ('smote_adv', 'smote-adv', 'rubric', 'smote_rubric'):
+        X_res, y_res = smote_enn_resample(X, y, random_state=42, ratio=1.0)
+        # Check if SMOTE-ENN created a single-class dataset
+        import numpy as __np
+        if len(__np.unique(y_res)) < 2:
+            print('   WARNING: SMOTE-ENN created single-class dataset, falling back to SMOTE')
+            return smote_oversample(X, y, random_state=42, ratio=0.5)
+        return X_res, y_res
+    if method in ('smote_adv', 'smote-adv', 'rubric', 'smote_rubric', 'none_rubric', 'none-rubric'):
         print('   Applying RUBRIC (SVM-SMOTE + Adversarial Filter, final 50:50)...')
         # Generate to 1:1 via SVM-SMOTE
         X_sm, y_sm = svm_smote_oversample(X, y, random_state=42, ratio=1.0)
@@ -551,7 +562,7 @@ def _apply_augmentation(X, y, method: str):
             X_real_min,
             X_synth_min,
             keep_top_frac=0.65,
-            max_iter=500,
+            max_iter=100,  # Reduced from 500 to speed up
             C=2.0,
             k_density=11,
             k_majority=11,
@@ -571,10 +582,75 @@ def _apply_augmentation(X, y, method: str):
         X_new = __np.vstack([X_maj_sel, X_min_all])
         y_new = __np.hstack([y_maj_sel, y_min_all])
         return X_new, y_new
-    # Generic RUBRIC add-on for other generators, unified kernel above
+    # Generic RUBRIC add-on for other generators
     if method.endswith('_rubric') or method.endswith('-rubric'):
-        # Delegate to unified SVM-SMOTE + ADV kernel
-        return _apply_augmentation(X, y, 'smote_rubric')
+        base_method = method.replace('_rubric', '').replace('-rubric', '')
+        print(f'   Applying RUBRIC ({base_method.upper()} + Adversarial Filter)...')
+        
+        # First generate synthetic samples using the base method
+        if base_method == 'smote':
+            X_gen, y_gen = smote_oversample(X, y, random_state=42, ratio=1.0)
+        elif base_method == 'adasyn':
+            X_gen, y_gen = adasyn_oversample(X, y, random_state=42, ratio=1.0)
+        elif base_method in ('borderline_smote', 'borderline-smote'):
+            X_gen, y_gen = borderline_smote_oversample(X, y, random_state=42, ratio=1.0)
+        elif base_method in ('svm_smote', 'svm-smote'):
+            X_gen, y_gen = svm_smote_oversample(X, y, random_state=42, ratio=1.0)
+        elif base_method in ('kmeans_smote', 'kmeans-smote'):
+            X_gen, y_gen = kmeans_smote_oversample(X, y, random_state=42, ratio=1.0, cluster_balance_threshold=0.05)
+        elif base_method in ('smote_tomek', 'tomek'):
+            X_gen, y_gen = smote_tomek_resample(X, y, random_state=42, ratio=1.0)
+        elif base_method in ('smote_enn', 'enn'):
+            X_gen, y_gen = smote_enn_resample(X, y, random_state=42, ratio=1.0)
+            # Check if SMOTE-ENN created a single-class dataset
+            import numpy as __np
+            if len(__np.unique(y_gen)) < 2:
+                print('   WARNING: SMOTE-ENN created single-class dataset, falling back to SMOTE')
+                X_gen, y_gen = smote_oversample(X, y, random_state=42, ratio=0.5)
+        else:
+            raise ValueError(f"Unknown base method for RUBRIC: {base_method}")
+        
+        # Apply RUBRIC filtering
+        import numpy as __np
+        n_orig = len(X)
+        minority_label = 1
+        X_tail, y_tail = X_gen[n_orig:], y_gen[n_orig:]
+        X_synth_min = X_tail[y_tail == minority_label]
+        X_real_min = X[y == minority_label]
+        X_maj = X[y == 0]
+        
+        from augment import rubric_filter_synthetic as __rfs
+        X_keep = __rfs(
+            X_real_min,
+            X_synth_min,
+            keep_top_frac=0.65,  # Slightly higher keep fraction for better quality
+            max_iter=100,
+            C=2.0,
+            k_density=11,
+            k_majority=11,
+            X_majority=X_maj,
+            weights=(0.4, 0.4, 0.2),
+            gate_frac=0.9,
+            return_times=None,
+        )
+        
+        # Combine real minority, filtered synthetic minority, and subsample majority to 50:50
+        X_min_all = __np.vstack([X_real_min, X_keep])
+        y_min_all = __np.ones(len(X_min_all), dtype=int)
+        
+        from numpy.random import default_rng as __rng
+        R = __rng(42)
+        maj_idx = __np.arange(len(X_maj))
+        sel = R.choice(maj_idx, size=min(len(X_maj), len(X_min_all)), replace=False)
+        X_maj_sel = X_maj[sel]
+        y_maj_sel = __np.zeros(len(X_maj_sel), dtype=int)
+        
+        X_new = __np.vstack([X_maj_sel, X_min_all])
+        y_new = __np.hstack([y_maj_sel, y_min_all])
+        
+        print(f'   Final distribution after RUBRIC: {__np.mean(y_new):.4f}')
+        return X_new, y_new
+        
     raise ValueError(f"Unknown method: {method}")
 
 def _find_best_threshold(y_true, y_pred_proba):
@@ -600,6 +676,12 @@ def _train_and_eval_models(X_train, y_train, X_test, y_test, models: dict):
     )
     from sklearn.calibration import CalibratedClassifierCV as _CalibratedClassifierCV
 
+    # Check if we have both classes in training data
+    unique_train = _np.unique(y_train)
+    if len(unique_train) < 2:
+        print(f"   WARNING: Training data only contains class {unique_train[0]}. Skipping model training.")
+        return {}
+
     results = {}
     for name, model in models.items():
         print(f"   Training {name}...")
@@ -615,54 +697,85 @@ def _train_and_eval_models(X_train, y_train, X_test, y_test, models: dict):
             mm = _MinMaxScaler()
             Xtr_used = mm.fit_transform(X_train)
             Xte_used = mm.transform(X_test)
-        model.fit(Xtr_used, y_train)
-        train_time = _time.time() - t0
+        
+        try:
+            model.fit(Xtr_used, y_train)
+            train_time = _time.time() - t0
 
-        calibrated_model = None
-        if hasattr(model, 'predict_proba'):
-            try:
-                y_pred_proba = model.predict_proba(Xte_used)[:, 1]
-                train_proba = model.predict_proba(Xtr_used)[:, 1]
-            except Exception:
-                calibrated_model = _CalibratedClassifierCV(model, method='sigmoid', cv=3)
-                calibrated_model.fit(Xtr_used, y_train)
-                y_pred_proba = calibrated_model.predict_proba(Xte_used)[:, 1]
-                train_proba = calibrated_model.predict_proba(Xtr_used)[:, 1]
-        else:
-            calibrated_model = _CalibratedClassifierCV(model, method='sigmoid', cv=3)
-            calibrated_model.fit(Xtr_used, y_train)
-            y_pred_proba = calibrated_model.predict_proba(Xte_used)[:, 1]
-            train_proba = calibrated_model.predict_proba(Xtr_used)[:, 1]
+            calibrated_model = None
+            if hasattr(model, 'predict_proba'):
+                try:
+                    y_pred_proba = model.predict_proba(Xte_used)
+                    # Check if we have probabilities for both classes
+                    if y_pred_proba.shape[1] > 1:
+                        y_pred_proba = y_pred_proba[:, 1]
+                        train_proba = model.predict_proba(Xtr_used)[:, 1]
+                    else:
+                        # Single class prediction - use the class probability
+                        y_pred_proba = y_pred_proba[:, 0]
+                        train_proba = model.predict_proba(Xtr_used)[:, 0]
+                        print(f"     WARNING: Model only predicts single class")
+                except Exception as e:
+                    # Try calibration
+                    try:
+                        calibrated_model = _CalibratedClassifierCV(model, method='sigmoid', cv=3)
+                        calibrated_model.fit(Xtr_used, y_train)
+                        y_pred_proba = calibrated_model.predict_proba(Xte_used)[:, 1]
+                        train_proba = calibrated_model.predict_proba(Xtr_used)[:, 1]
+                    except Exception as e2:
+                        print(f"     ERROR: Failed to get probabilities: {e2}")
+                        continue
+            else:
+                try:
+                    calibrated_model = _CalibratedClassifierCV(model, method='sigmoid', cv=3)
+                    calibrated_model.fit(Xtr_used, y_train)
+                    y_pred_proba = calibrated_model.predict_proba(Xte_used)[:, 1]
+                    train_proba = calibrated_model.predict_proba(Xtr_used)[:, 1]
+                except Exception as e:
+                    print(f"     ERROR: Failed to calibrate model: {e}")
+                    continue
 
-        best_threshold = _find_best_threshold(y_train, train_proba)
-        y_pred = (y_pred_proba >= best_threshold).astype(int)
+            best_threshold = _find_best_threshold(y_train, train_proba)
+            y_pred = (y_pred_proba >= best_threshold).astype(int)
 
-        precision = _precision_score(y_test, y_pred)
-        recall = _recall_score(y_test, y_pred)
-        f1 = _f1_score(y_test, y_pred)
-        auc = _roc_auc_score(y_test, y_pred_proba)
-        ap = _average_precision_score(y_test, y_pred_proba)
-        brier = _brier_score_loss(y_test, y_pred_proba)
-        acc = _accuracy_score(y_test, y_pred)
-        bacc = _balanced_accuracy_score(y_test, y_pred)
+            # Ensure predictions contain both classes for metrics calculation
+            if len(_np.unique(y_pred)) == 1:
+                print(f"     WARNING: Model predicts only class {_np.unique(y_pred)[0]}")
+                precision = 0.0 if _np.unique(y_pred)[0] == 0 else _np.mean(y_test == 1)
+                recall = 0.0 if _np.unique(y_pred)[0] == 0 else 1.0
+                f1 = 0.0
+            else:
+                precision = _precision_score(y_test, y_pred)
+                recall = _recall_score(y_test, y_pred)
+                f1 = _f1_score(y_test, y_pred)
+            
+            auc = _roc_auc_score(y_test, y_pred_proba)
+            ap = _average_precision_score(y_test, y_pred_proba)
+            brier = _brier_score_loss(y_test, y_pred_proba)
+            acc = _accuracy_score(y_test, y_pred)
+            bacc = _balanced_accuracy_score(y_test, y_pred)
 
-        results[name] = {
-            'model': model,
-            'y_pred': y_pred,
-            'y_pred_proba': y_pred_proba,
-            'precision': float(precision),
-            'recall': float(recall),
-            'f1': float(f1),
-            'auc': float(auc),
-            'ap': float(ap),
-            'brier': float(brier),
-            'accuracy': float(acc),
-            'balanced_accuracy': float(bacc),
-            'train_time': float(train_time),
-            'best_threshold': float(best_threshold),
-            'y_true': y_test,
-        }
-        print(f"     Recall: {recall:.4f}, Precision: {precision:.4f}, F1: {f1:.4f}, Acc: {acc:.4f}, BAcc: {bacc:.4f}, Threshold: {best_threshold:.3f}")
+            results[name] = {
+                'model': model,
+                'y_pred': y_pred,
+                'y_pred_proba': y_pred_proba,
+                'precision': float(precision),
+                'recall': float(recall),
+                'f1': float(f1),
+                'auc': float(auc),
+                'ap': float(ap),
+                'brier': float(brier),
+                'accuracy': float(acc),
+                'balanced_accuracy': float(bacc),
+                'train_time': float(train_time),
+                'best_threshold': float(best_threshold),
+                'y_true': y_test,
+            }
+            print(f"     Recall: {recall:.4f}, Precision: {precision:.4f}, F1: {f1:.4f}, Acc: {acc:.4f}, BAcc: {bacc:.4f}, Threshold: {best_threshold:.3f}")
+        except Exception as e:
+            print(f"     ERROR: Failed to train {name}: {e}")
+            continue
+    
     return results
 
 def _plot_precision_recall_curves(results_dict: dict, dataset_name: str, output_dir: str):
@@ -820,30 +933,30 @@ def _create_comparison_tables(results_dict: dict, dataset_name: str, output_dir:
     print(f"Comprehensive comparison table saved to: {comp_path}")
     return df
 
-def _save_augmented_creditcard(X_aug, y_aug, method: str):
-    """Save augmented Credit Card dataset snapshot under data/augmented/creditcard.
-    Uses original feature names from creditcard.csv (excluding Class).
+def _save_augmented_santander(X_aug, y_aug, method: str):
+    """Save augmented Santander dataset snapshot under data/augmented/santander.
+    Uses original feature names from santander train.csv (excluding ID_code and target).
     """
     import pandas as __pd
     from pathlib import Path as __Path
-    data_path = __Path('data') / 'creditcard.csv'
+    data_path = __Path('data') / 'santander-customer-transaction-prediction' / 'train.csv'
     if not data_path.exists():
         # Fallback generic feature names
-        feat_cols = [f'feat_{i}' for i in range(X_aug.shape[1])]
+        feat_cols = [f'var_{i}' for i in range(X_aug.shape[1])]
     else:
         df_src = __pd.read_csv(data_path, nrows=1)
-        feat_cols = [c for c in df_src.columns if c != 'Class']
+        feat_cols = [c for c in df_src.columns if c.startswith('var_')]
         if len(feat_cols) != X_aug.shape[1]:
-            feat_cols = [f'feat_{i}' for i in range(X_aug.shape[1])]
-    out_dir = __Path('data') / 'augmented' / 'creditcard'
+            feat_cols = [f'var_{i}' for i in range(X_aug.shape[1])]
+    out_dir = __Path('data') / 'augmented' / 'santander'
     out_dir.mkdir(parents=True, exist_ok=True)
     df = __pd.DataFrame(X_aug, columns=feat_cols)
-    df['Class'] = y_aug
-    fp = out_dir / f"creditcard_{method}_augmented.csv"
+    df['target'] = y_aug
+    fp = out_dir / f"santander_{method}_augmented.csv"
     df.to_csv(fp, index=False)
     print(f"   Augmented data saved to: {fp}")
 
-def run_comprehensive_creditcard_experiments():
+def run_comprehensive_santander_experiments():
     from sklearn.model_selection import train_test_split as _tts
     from sklearn.preprocessing import StandardScaler as _StandardScaler
     # Optional models
@@ -867,12 +980,12 @@ def run_comprehensive_creditcard_experiments():
     _suppress_sklearn_warnings()
     _ensure_src_on_path()
 
-    print("RUBRIC comparison (Credit Card)")
-    out_dir = 'outputs/credit_card'
+    print("RUBRIC comparison (Santander Customer Transaction Prediction)")
+    out_dir = 'outputs/santander-customer-transaction-prediction'
     _Path(out_dir).mkdir(parents=True, exist_ok=True)
 
     # Load data
-    X, y, df = _load_credit_card_data()
+    X, y, df = _load_santander_data()
     if X is None:
         return
 
@@ -887,6 +1000,7 @@ def run_comprehensive_creditcard_experiments():
     X_train_s = scaler.fit_transform(X_train)
     X_test_s = scaler.transform(X_test)
     print(f"Training set: {X_train_s.shape}, Test set: {X_test_s.shape}")
+    print(f"Class distribution - Train: {_np.mean(y_train):.4f}, Test: {_np.mean(y_test):.4f}")
 
     # Models
     from sklearn.linear_model import LogisticRegression as _LR, SGDClassifier as _SGD, PassiveAggressiveClassifier as _PA, RidgeClassifier as _Ridge
@@ -900,24 +1014,12 @@ def run_comprehensive_creditcard_experiments():
     from sklearn.ensemble import HistGradientBoostingClassifier as _HGB
 
     models = {
-        'RandomForest': _RF(random_state=42, n_jobs=-1),
-        'LogisticRegression': _LR(max_iter=2000, class_weight='balanced', random_state=42, solver='liblinear'),
-        'LinearSVC': _LinearSVC(C=1.0, class_weight='balanced', random_state=42, max_iter=2000),
-        'SGD_Logistic': _SGD(loss='log_loss', class_weight='balanced', random_state=42, max_iter=2000),
-        'KNN_15': _KNN(n_neighbors=15, weights='distance', n_jobs=-1),
+        'RandomForest': _RF(n_estimators=100, random_state=42, n_jobs=-1),
+        'LogisticRegression': _LR(max_iter=1000, class_weight='balanced', random_state=42, solver='liblinear'),
+        'LinearSVC': _LinearSVC(C=1.0, class_weight='balanced', random_state=42, max_iter=1000),
         'GaussianNB': _GNB(),
-        'BernoulliNB': _BNB(),
-        'ComplementNB': _CNB(),
         'DecisionTree': _DT(random_state=42, class_weight='balanced'),
-        'ExtraTrees': _ET(n_estimators=300, random_state=42, n_jobs=-1, class_weight='balanced'),
-        'HistGradientBoosting': _HGB(random_state=42, max_iter=200, learning_rate=0.1),
-        'Bagging': _Bag(estimator=_DT(class_weight='balanced', random_state=42), n_estimators=100, n_jobs=-1, random_state=42),
-        'LDA': _LDA(),
-        'QDA': _QDA(),
-        'MLP': _MLP(hidden_layer_sizes=(100,), max_iter=200, random_state=42, early_stopping=True, validation_fraction=0.1),
-        'PassiveAggressive': _PA(random_state=42, class_weight='balanced', max_iter=2000),
-        'RidgeClassifier': _Ridge(random_state=42, class_weight='balanced', alpha=1.0),
-        'NearestCentroid': _NC(),
+        'HistGradientBoosting': _HGB(random_state=42, max_iter=100, learning_rate=0.1),
     }
     if _HAS_LGB:
         import lightgbm as _lgb
@@ -935,23 +1037,39 @@ def run_comprehensive_creditcard_experiments():
         models = {k: v for k, v in models.items() if k in selected}
 
     methods = [
-        'none', 'none_rubric',
-        'smote', 'smote_rubric',
-        'adasyn', 'adasyn_rubric',
-        'borderline_smote', 'borderline_smote_rubric',
-        'svm_smote', 'svm_smote_rubric',
-        'kmeans_smote', 'kmeans_smote_rubric',
-        'smote_tomek', 'smote_tomek_rubric',
-        'smote_enn', 'smote_enn_rubric',
+        'none',
+        'none_rubric',
+        'smote', 
+        'adasyn', 
+        'borderline_smote', 
+        'svm_smote', 
+        'kmeans_smote',
+        'smote_tomek',
+        'smote_enn',
+        'smote_rubric',
+        'adasyn_rubric',
+        'borderline_smote_rubric',
+        'svm_smote_rubric',
+        'kmeans_smote_rubric',
+        'smote_tomek_rubric',
+        'smote_enn_rubric',
     ]
     env_methods = _os.environ.get('EDA_METHODS')
     if env_methods:
         selected_methods = [m.strip() for m in env_methods.split(',') if m.strip()]
         methods = [m for m in methods if m in selected_methods]
+    
+    # Quick mode for faster testing - disable by default
+    if _os.environ.get('QUICK_MODE', '').lower() == 'true':
+        print("Running in QUICK MODE - testing only basic methods")
+        methods = ['none', 'smote', 'svm_smote', 'smote_rubric']
+    else:
+        print(f"Running full experiment with {len(methods)} augmentation methods")
 
     all_results = {}
-    for method in methods:
-        print(f"\n{'-'*40}\nTesting {method.upper()} method\n{'-'*40}")
+    total_methods = len(methods)
+    for idx, method in enumerate(methods, 1):
+        print(f"\n{'-'*40}\nTesting {method.upper()} method ({idx}/{total_methods})\n{'-'*40}")
         t0 = _time.time()
         if method in ('none',):
             X_aug, y_aug = X_train_s, y_train
@@ -969,7 +1087,7 @@ def run_comprehensive_creditcard_experiments():
 
         # Save augmented snapshot for reproducibility
         try:
-            _save_augmented_creditcard(X_aug, y_aug, method)
+            _save_augmented_santander(X_aug, y_aug, method)
         except Exception as e:
             print(f"   [warn] Failed to save augmented dataset for {method}: {e}")
 
@@ -977,70 +1095,19 @@ def run_comprehensive_creditcard_experiments():
         method_results = _train_and_eval_models(X_aug, y_aug, X_test_s, y_test, models)
         all_results[method] = method_results
 
-    dataset_name = 'Credit Card'
+    dataset_name = 'Santander Customer Transaction Prediction'
     print(f"\nGenerating plots and report for {dataset_name}...")
     _plot_precision_recall_curves(all_results, dataset_name, out_dir)
     _plot_calibration_curves(all_results, dataset_name, out_dir)
     _generate_text_report(all_results, dataset_name, out_dir)
     _save_detailed_results(all_results, dataset_name, out_dir)
     _create_comparison_tables(all_results, dataset_name, out_dir)
-    # Optional: update README if present
-    try:
-        _update_readme_with_results(all_results, readme_path=str((_Path(__file__).resolve().parent.parent / 'README.md')))
-        print('README updated with latest results table.')
-    except Exception as e:
-        print(f"Failed to update README: {e}")
     print(f"[OK] {dataset_name} comprehensive testing completed! Results in: {out_dir}")
-
-
-# --- README auto-update helpers (lightweight) ---
-import re as _re
-def _build_table_md(_all):
-    header = (
-        "| Method | Model | F1-Score | Precision | Recall | AUC | Balanced Accuracy | Brier Score |\n"
-        "|--------|-------|----------|-----------|--------|-----|-------------------|-------------|\n"
-    )
-    lines = [header]
-    method_order = ['smote_adv', 'smote', 'adasyn', 'borderline_smote', 'svm_smote', 'kmeans_smote', 'smote_tomek', 'smote_enn', 'none']
-    for method in method_order:
-        if method not in _all:
-            continue
-        for model_name, metrics in sorted(_all[method].items()):
-            line = f"| {method.replace('_','-').upper()} | {model_name} | {metrics['f1']:.4f} | {metrics['precision']:.4f} | {metrics['recall']:.4f} | {metrics['auc']:.4f} | {metrics['balanced_accuracy']:.4f} | {metrics['brier']:.4f} |"
-            lines.append(line + "\n")
-    return ''.join(lines)
-
-def _update_readme_with_results(all_results, readme_path='README.md'):
-    table_md = _build_table_md(all_results)
-    try:
-        with open(readme_path, 'r', encoding='utf-8') as f:
-            readme = f.read()
-    except Exception:
-        return False
-    header_pat = r"(\*\*Latest Comprehensive Evaluation Results:\*\*|Latest Comprehensive Evaluation Results:)"
-    table_pat = r"\| Method \| Model \|[\s\S]*?\n\n"
-    header_match = _re.search(header_pat, readme)
-    if not header_match:
-        new_readme = _re.sub(table_pat, table_md + "\n\n", readme, count=1)
-    else:
-        start = header_match.end()
-        after = readme[start:]
-        table_match = _re.search(table_pat, after)
-        if table_match:
-            s, e = table_match.span()
-            new_after = after[:s] + table_md + "\n\n" + after[e:]
-            new_readme = readme[:start] + new_after
-        else:
-            insertion_point = start
-            new_readme = readme[:insertion_point] + "\n" + table_md + "\n\n" + readme[insertion_point:]
-    with open(readme_path, 'w', encoding='utf-8') as f:
-        f.write(new_readme)
-    return True
 
 
 def main():
     # Run the comprehensive in-process pipeline instead of delegating to src/train.py
-    run_comprehensive_creditcard_experiments()
+    run_comprehensive_santander_experiments()
 
 
 if __name__ == '__main__':
