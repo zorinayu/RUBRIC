@@ -10,19 +10,7 @@ RUBRIC is a standardized, extensible benchmark and reference implementation for 
 
 ## Overview
 
-This repository provides a compact, reproducible pipeline for imbalanced classification across multiple datasets, with consistent preprocessing, feature mapping, models, augmentation plug-ins, metrics, and reports:
-
-1. Up-dimension via RBF feature mapping (Random Fourier Features)
-2. Linear SVM classifier with class weighting
-3. RUBRIC add-on: filtering using a logistic regression discriminator
-4. Multi-dataset support: Credit Card Fraud, NSL-KDD
-5. Optional 2D visualization (UMAP/PCA)
-6. Baselines: SMOTE, ADASYN, Borderline-SMOTE, SVM-SMOTE (via imbalanced-learn)
-
-Supported datasets:
-- Credit Card Fraud Detection (284,807 transactions; fraud ≈ 0.172%) — extreme imbalance
-- NSL-KDD Network Intrusion Detection (148,517 connections; attacks ≈ 48.12%) — roughly balanced
-- IEEE-CIS Fraud Detection (Kaggle) — large-scale e-commerce transactions; label `isFraud`
+This repository provides a minimal, unified training entry point and a lightweight RUBRIC filtering add-on. Public release focuses on the training script; data preparation and extended pipelines are intentionally simplified to avoid over-claiming on unstable variants.
 
 ---
 
@@ -35,25 +23,13 @@ python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Act
 pip install -r requirements.txt
 ```
 
-### 1) Download Data (one-time)
+### 1) Data (minimal)
 
-Credit Card Fraud dataset:
-- Visit the dataset page: [Kaggle page](https://www.kaggle.com/mlg-ulb/creditcardfraud)
-- Download `creditcard.csv` to `data/creditcard.csv`.
+Use standard public datasets (e.g., Credit Card Fraud, NSL-KDD, IEEE-CIS, Santander). Place raw files under `data/` following their respective licenses. Basic normalization is handled internally; users may adapt preprocessing to their environment.
 
-NSL-KDD dataset:
-- Visit the dataset page: [Kaggle page](https://www.kaggle.com/datasets/hassan06/nslkdd)
-- Place files under `data/NSL-KDD dataset/` (e.g., `KDDTrain+.txt`, `KDDTest+.txt`).
+### 2) Train
 
-IEEE-CIS Fraud Detection (Kaggle):
-- Competition page: [Kaggle competition](https://www.kaggle.com/competitions/ieee-fraud-detection/overview)
-- Create folder: `data/ieee-fraud-detection/`
-- Download `train_transaction.csv` (required) and `train_identity.csv` (optional) into that folder
-- Note: Our baseline runner uses numeric features; categorical handling can be added later
-
-### 2) Train + Evaluate
-
-Credit Card Fraud Detection:
+Credit Card Fraud Detection (example):
 ```bash
 # Baselines (same preprocessing & median-gamma)
 python src/train.py --dataset creditcard --augment none --rbf-gamma -1.0 --seed 42
@@ -78,10 +54,10 @@ python src/train.py --dataset creditcard --augment adv --gen-kind svm --target-r
 python src/train.py --dataset creditcard --augment adv --rbf-components 400 --rbf-gamma 0.5 --svm-C 1.0 --test-size 0.2 --seed 42
 ```
 
-NSL-KDD usage is analogous.
+IEEE-CIS and Santander usage is analogous; call `src/train.py` directly by analogy.
 
 Key parameters:
-- `--dataset`: `creditcard` or `nsl_kdd`
+- `--dataset`: `creditcard` | `nsl_kdd` | `ieee_fraud_detection` | `santander`
 - `--augment`: `none`, `smote`, `adv`, `adasyn`, `borderline-smote`, `svm-smote`, `smote-tomek`, `smote-enn`
 - `--gen-kind` (when `adv`): `smote`, `borderline`, `borderline2`, `svm`, `kmeans`, `smote-tomek`, `smote-enn`, `adasyn`
 - `--keep-frac` alias of `--keep-top-frac`
@@ -90,38 +66,11 @@ Key parameters:
 - `--svm-C`: SVM regularization strength (default: 1.0)
 - `--test-size`: test set fraction (default: 0.2)
 
-### 3) Generate Augmented Datasets (optional)
+### 3) Notes on data processing
 
-Credit Card Fraud dataset:
-```bash
-# Generate dataset with a chosen method (example: kmeans-smote)
-python scripts/generate_augmented_datasets.py --method kmeans-smote --dataset creditcard --input data/creditcard.csv --output-dir data/augmented --seed 42
-```
+Preprocessing (standardization/encoding) is intentionally lightweight in this public release. For rigorous evaluation, adapt preprocessing to your deployment setting and follow best practices to avoid leakage.
 
-NSL-KDD dataset:
-```bash
-# Generate dataset with a chosen method
-python scripts/generate_augmented_datasets.py --method adasyn --dataset nsl_kdd --output-dir data/augmented --seed 42
-```
-
-### 4) Run Complete Experiments
-
-Credit Card Fraud Detection:
-```bash
-python scripts/run_creditcard_experiments.py
-```
-
-NSL-KDD experiments are optional:
-```bash
-python scripts/run_nsl_kdd_experiments.py
-```
-
-IEEE-CIS Fraud Detection:
-```bash
-python scripts/run_ieee_experiments.py
-```
-
-### 5) Outputs
+### 4) Outputs
 
 - Metrics per run: `outputs/<run_name>/metrics.json`
 - Plots: ROC/PR curves in `outputs/<run_name>/plots/`
@@ -131,40 +80,38 @@ python scripts/run_ieee_experiments.py
 
 ---
 
-## Project Structure
+## Reproducibility and Ethics (concise)
+
+- Multi-seed protocol: repeat each configuration over a fixed seed set (e.g., `{42, 52, 62, 72, 82}`) and report mean±std. Thresholds are chosen on validation by maximizing F1 and applied once to test for every method consistently.
+- Determinism: scikit-learn seeds are set; minor nondeterminism may remain due to data shuffles or library internals.
+- Variance expectation: near-boundary filtering and stochastic candidate generation can yield small run-to-run fluctuations. Claims should be made on aggregated statistics; single-seed results are illustrative only.
+- Deployment caution: for fraud/health-like use cases, evaluate operating thresholds, calibration (Brier score, reliability plots), and application-specific costs before deployment.
+
+See `REPRODUCIBILITY.md` for environment and seed notes. `RESULTS.md` is currently a paper-submission placeholder; updates will follow.
+
+---
+
+## Project Structure (public)
 
 ```
 RUBRIC/
 ├── data/
-│   ├── creditcard.csv
-│   ├── NSL-KDD dataset/
-│   └── augmented/
+│   └── ...                   # user-provided public datasets
 ├── outputs/
-│   └── <multiple run folders containing metrics.json and plots/>
-├── scripts/
-│   ├── generate_augmented_datasets.py
-│   ├── run_creditcard_experiments.py
-│   └── run_nsl_kdd_experiments.py
+│   └── <run folders containing metrics.json and plots/>
 ├── src/
-│   ├── train.py
-│   ├── data.py
-│   ├── preprocess.py
-│   ├── augment.py            # RUBRIC implementation
-│   ├── evaluate.py
-│   └── models/
-│       └── svm_rff.py
+│   └── train.py              # public training entry point
 ├── requirements.txt
-└── README.md
+├── README.md
+├── REPRODUCIBILITY.md        # environment, seeds (concise)
+└── RESULTS.md                # paper-submission placeholder
 ```
 
 ---
 
-## Baselines and Sources
+## Baselines
 
-We compare RUBRIC-augmented methods against widely used baselines implemented in mature libraries:
-
-- SMOTE, Borderline-SMOTE, SVMSMOTE, ADASYN from `imbalanced-learn` ([GitHub](https://github.com/scikit-learn-contrib/imbalanced-learn), [Docs](https://imbalanced-learn.org/stable/over_sampling.html))
-  Install: `pip install imbalanced-learn`
+SMOTE-family baselines can be installed via `imbalanced-learn` if desired: `pip install imbalanced-learn`.
 
 ## RUBRIC Filtering
 
@@ -177,13 +124,13 @@ RUBRIC enhances oversampling by adding a filtering step:
 3. Keep synthetic samples closest to the decision boundary (hardest to distinguish)
 4. Combine majority + minority originals with the filtered synthetic minority
 
-### Generator-agnostic usage
+### Generator-agnostic usage (examples)
 
 Apply RUBRIC on top of different generators with a unified CLI:
 
 ```bash
 # Pattern
-python src/train.py --dataset <creditcard|nsl_kdd> --augment adv \
+python src/train.py --dataset <creditcard|nsl_kdd|ieee_fraud_detection|santander> --augment adv \
   --gen-kind <smote|borderline|borderline2|svm|kmeans|smote-tomek|smote-enn|adasyn> \
   --target-ratio 0.3 --keep-frac 0.65 --adv-C 1.0 --rbf-gamma -1.0 --seed 42
 
@@ -199,85 +146,11 @@ Notes:
 - RUBRIC is the same across generators; only `--gen-kind` switches the underlying oversampler.
 - On balanced datasets, the training script auto-adjusts an effective target ratio slightly above the current class ratio to keep settings valid.
 
-### Results (Credit Card Fraud, seed=42, RFF=300, median-gamma)
-
-Paired base vs RUBRIC (same underlying generator):
-
-| Generator | ROC-AUC (base) | PR-AUC (base) | F1-Macro (base) | ROC-AUC (RUBRIC) | PR-AUC (RUBRIC) | F1-Macro (RUBRIC) | ΔPR-AUC | ΔF1-Macro |
-|-----------|-----------------|---------------|------------------|------------------|-----------------|-------------------|---------|-----------|
-| SMOTE | 0.958127 | 0.510969 | 0.549454 | 0.939537 | 0.483470 | 0.546874 | -0.027499 | -0.002580 |
-| Borderline-SMOTE | 0.943584 | 0.548030 | 0.667823 | 0.948718 | 0.559856 | 0.676186 | +0.011826 | +0.008363 |
-| SVM-SMOTE | 0.9609 | 0.6707 | 0.7024 | 0.9606 | 0.6685 | 0.6955 | -0.0022 | -0.0069 |
-
-Absolute metrics (all methods in this run):
-
-| Method | ROC-AUC | PR-AUC | F1-Weighted | F1-Macro |
-|--------|---------|--------|-------------|----------|
-| None | 0.9686 | 0.5586 | 0.9985 | 0.7441 |
-| SMOTE | 0.9613 | 0.5157 | 0.9921 | 0.5867 |
-| ADASYN | 0.911581 | 0.386259 | 0.978275 | 0.521606 |
-| Borderline-SMOTE | 0.943584 | 0.548030 | 0.996416 | 0.667823 |
-| SVM-SMOTE | 0.9609 | 0.6707 | 0.9969 | 0.7024 |
-| SMOTE + RUBRIC | 0.939537 | 0.483470 | 0.987263 | 0.546874 |
-| Borderline + RUBRIC | 0.948718 | 0.559856 | 0.996586 | 0.676186 |
-| SMOTE-Tomek + RUBRIC | 0.858890 | 0.418473 | 0.989305 | 0.547409 |
-| SMOTE-ENN + RUBRIC | 0.881601 | 0.433934 | 0.989316 | 0.553480 |
-| SVM-SMOTE + RUBRIC | 0.9606 | 0.6685 | 0.9967 | 0.6955 |
-
-Figures:
-- Paired deltas per metric: `outputs/creditcard_comparison_report/paired_deltas.png`
-- Win-rate of RUBRIC over base (PR-AUC): `outputs/creditcard_comparison_report/win_rate.png`
-- Overview plots: `outputs/creditcard_comparison_report/creditcard_comparison_plots.png`
-
-Runtime (see `outputs/creditcard_comparison_report/summary.csv` for per-run and averages).
-
 ---
 
-### Results (NSL-KDD, seed=42, RFF=300, median-gamma)
+## Results Snapshot (illustrative)
 
-Paired base vs RUBRIC (same underlying generator):
-
-| Generator | ROC-AUC (base) | PR-AUC (base) | F1-Macro (base) | ROC-AUC (RUBRIC) | PR-AUC (RUBRIC) | F1-Macro (RUBRIC) | ΔPR-AUC | ΔF1-Macro |
-|-----------|-----------------|---------------|------------------|------------------|-----------------|-------------------|---------|-----------|
-| SMOTE | 0.996364 | 0.996565 | 0.977206 | 0.996367 | 0.996557 | 0.977307 | -0.000008 | +0.000101 |
-| Borderline-SMOTE | 0.996617 | 0.996394 | 0.973883 | 0.996606 | 0.996598 | 0.974788 | +0.000204 | +0.000905 |
-| SVM-SMOTE | 0.996723 | 0.996045 | 0.976210 | 0.996587 | 0.996169 | 0.975260 | +0.000124 | -0.000950 |
-| SMOTE-ENN | 0.995442 | 0.995825 | 0.979166 | 0.996373 | 0.996546 | 0.977106 | +0.000721 | -0.002060 |
-| SMOTE-Tomek | 0.996316 | 0.996540 | 0.977544 | 0.996376 | 0.996564 | 0.977174 | +0.000024 | -0.000370 |
-
-Absolute metrics (all methods in this run):
-
-| Method | ROC-AUC | PR-AUC | F1-Weighted | F1-Macro |
-|--------|---------|--------|-------------|----------|
-| None | 0.996362 | 0.996530 | 0.977274 | 0.977241 |
-| SMOTE | 0.996364 | 0.996565 | 0.977240 | 0.977206 |
-| ADASYN | 0.996746 | 0.996597 | 0.973813 | 0.973781 |
-| Borderline-SMOTE | 0.996617 | 0.996394 | 0.973914 | 0.973883 |
-| SVM-SMOTE | 0.996723 | 0.996045 | 0.976237 | 0.976210 |
-| SMOTE + RUBRIC | 0.996367 | 0.996557 | 0.977341 | 0.977307 |
-| Borderline + RUBRIC | 0.996606 | 0.996598 | 0.974821 | 0.974788 |
-| SMOTE-Tomek + RUBRIC | 0.996376 | 0.996564 | 0.977207 | 0.977174 |
-| SMOTE-ENN + RUBRIC | 0.996373 | 0.996546 | 0.977140 | 0.977106 |
-| SVM-SMOTE + RUBRIC | 0.996587 | 0.996169 | 0.975292 | 0.975260 |
-
-Figures:
-- Paired deltas per metric: `outputs/nsl_kdd_comparison_report/paired_deltas.png`
-- Win-rate of RUBRIC over base (PR-AUC): `outputs/nsl_kdd_comparison_report/win_rate.png`
-- Overview plots: `outputs/nsl_kdd_comparison_report/nsl_kdd_comparison_plots.png`
-
----
-
-## Reproducibility
-
-- StandardScaler + median-gamma (`--rbf-gamma -1.0`)
-- Seeds via `--seed`, deterministic scikit-learn settings
-- All configs/metrics persisted per run
-
----
-
-## Notes
-- This README reflects `outputs/*_comparison_report/summary.csv` where available. Re-run the experiment scripts to regenerate.
-- Effects can be dataset- and generator-dependent.
+Per-dataset and per-method results vary with seeds. Reference CSVs are included under `outputs/` and mirror paper aggregates (means±std). To regenerate, follow the multi-seed protocol in `REPRODUCIBILITY.md`.
 
 ---
 

@@ -5,6 +5,11 @@ data/**
 !outputs/nsl_kdd_comparison_report/**
 outputs/**
 
+# Do not version dataset-specific runner scripts (kept locally only)
+scripts/run_ieee_experiments.py
+scripts/run_nsl_kdd_experiments.py
+scripts/run_santander_experiments.py
+
 # Checkpoints and caches
 .ipynb_checkpoints/**
 __pycache__/**

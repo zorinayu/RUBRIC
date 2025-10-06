@@ -1,2 +1,0 @@
-generator,metric,mean_delta,ci_lo,ci_hi,p_value,n_pairs
-smote,pr_auc,-0.027499256499154745,-0.027499256499154745,-0.027499256499154745,1.0,1
