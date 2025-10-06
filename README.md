@@ -154,17 +154,6 @@ Per-dataset and per-method results vary with seeds. Reference CSVs are included 
 
 ---
 
-## Authors
-
-**Yanxuan Yu**  
-Engineering School, Columbia University  
-Email: yy3523@columbia.edu  
-GitHub: [@zorinayu](https://github.com/zorinayu)
-
-**Dong Liu**  
-Department of Computer Science, Yale University  
-Email: dong.liu.dl2367@yale.edu
-
 ## License
 
 MIT
@@ -178,7 +167,6 @@ If you use this code in your research, please cite:
 ```bibtex
 @misc{rubric2025,
   title={RUBRIC: A Unified Benchmark and Filtering Toolkit for Imbalanced Classification},
-  author={Yanxuan Yu and Dong Liu},
   year={2025},
   url={https://github.com/zorinayu/RUBRIC}
 }
