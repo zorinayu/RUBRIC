@@ -15,11 +15,8 @@ Place public datasets as follows:
 - IEEE-CIS Fraud Detection: `data/ieee-fraud-detection/` with `train_transaction.csv` (and optionally `train_identity.csv`)
 - Santander Customer Transaction: `data/santander-customer-transaction-prediction/` with `train.csv`, `test.csv`
 
-### One-Click Runners
-- Credit Card: `python scripts/run_creditcard_experiments.py`
-- IEEE-CIS: `python scripts/run_ieee_experiments.py`
-- Santander: `python scripts/run_santander_experiments.py`
-- Or call `src/train.py` directly (see README) to run a single configuration.
+### Running Experiments
+- Call `src/train.py` directly to run a single configuration (see README for details)
 
 ### Multi-Seed Protocol
 - Seed set: `{42, 52, 62, 72, 82}` (example set used for paper aggregates)
@@ -42,10 +39,9 @@ Common flags for `src/train.py`:
 --seed 42
 ```
 
-### Outputs and Mapping
-- Per-run: `outputs/<run_name>/metrics.json`, plots under `outputs/<run_name>/plots/`
-- Summary CSVs: `outputs/<dataset>_comparison_report/summary.csv` (and pivots)
-- Paper mapping: see `RESULTS.md` for table/figure mapping and tag info
+### Outputs
+- Results are saved to the `outputs/` directory
+- See `RESULTS.md` for detailed results and analysis
 
 ### Expected Variance
 RUBRIC emphasizes near-boundary, discriminator-informed selection. Combined with random splits and model training, metrics will vary across seeds. Paper claims are based on multi-seed aggregates; single-seed examples are for illustration.
